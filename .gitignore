@@ -1,0 +1,20 @@
+# IDEs
+.idea/
+.vscode/
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS files
+.DS_Store
+Thumbs.db
