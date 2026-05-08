@@ -1,5 +1,5 @@
-def main():
-    print("Welcome to NarrativeEngine!")
+from ui.app import ChronosApp
 
 if __name__ == "__main__":
-    main()
+    app = ChronosApp()
+    app.run()
