@@ -1,0 +1,24 @@
+{
+  "player": {
+    "name": "Adventurer",
+    "hp": 20,
+    "max_hp": 20,
+    "level": 1,
+    "inventory": [
+      "Rusty Dagger"
+    ],
+    "stats": {
+      "strength": 10,
+      "dexterity": 10,
+      "intelligence": 10
+    }
+  },
+  "location": "The Rusty Gear Tavern",
+  "log": [
+    "You attempted to: p",
+    "You drank a Health Potion and recovered 10 HP."
+  ],
+  "story_history": [],
+  "turn_count": 0,
+  "metadata": {}
+}
