@@ -1,0 +1,18 @@
+{
+  "id": "tutorial_boss",
+  "name": "The Weeping Guardian",
+  "description": "A stone colossus from the Aurelian age stands dormant in the village ruins. It has begun to leak wild mana, poisoning the local wells.",
+  "objectives": [
+    "Locate the Weeping Guardian in the Shattered Plaza",
+    "Find a way to soothe or dismantle the Guardian",
+    "Retrieve the Solar Crest"
+  ],
+  "narrative_guidelines": "The Guardian is a relic of the old world, made of white marble and gold. It 'weeps' liquid mana from its eye-sockets. It is not inherently evil, but malfunctioning. Mention how the player's blood feels warm and begins to hum as they approach the colossus.",
+  "boss_stats": {
+    "name": "Weeping Guardian",
+    "hp": 60,
+    "max_hp": 60,
+    "damage_range": [8, 15]
+  },
+  "rewards": ["Solar Crest", "Mana Shard"]
+}
