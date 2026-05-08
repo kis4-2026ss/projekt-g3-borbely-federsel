@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Dev\\\\KIL\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\" -Exclude \".venv\", \".idea\" | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Dev\\\\KIL\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\\\\ui\" -Recurse | ForEach-Object { $_.FullName }; Get-ChildItem -Path \"C:\\\\Dev\\\\KIL\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\\\\ai\" -Recurse | ForEach-Object { $_.FullName }; Get-ChildItem -Path \"C:\\\\Dev\\\\KIL\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\\\\prompts\" -Recurse | ForEach-Object { $_.FullName }; Get-ChildItem -Path \"C:\\\\Dev\\\\KIL\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\\\\data\" -Recurse | ForEach-Object { $_.FullName })",
+      "PowerShell(.venv\\\\Scripts\\\\python.exe -c \"import py_compile, sys; [py_compile.compile\\(p, doraise=True\\) for p in ['engine/models.py','engine/state_changes.py','engine/core.py','engine/exploration.py','engine/combat.py','ai/client.py','ai/parser.py','ai/orchestrator.py','ui/app.py','main.py']]; print\\('OK'\\)\")",
+      "PowerShell(.venv\\\\Scripts\\\\python.exe -c \"import py_compile; py_compile.compile\\('ui/app.py', doraise=True\\); print\\('OK'\\)\")",
+      "PowerShell(.venv\\\\Scripts\\\\python.exe -c \"import py_compile; [py_compile.compile\\(p, doraise=True\\) for p in ['main.py','engine/models.py','engine/state_changes.py','engine/core.py','engine/exploration.py','engine/combat.py','ai/client.py','ai/parser.py','ai/orchestrator.py','ui/app.py']]; print\\('all modules compile'\\)\")"
+    ]
+  }
+}

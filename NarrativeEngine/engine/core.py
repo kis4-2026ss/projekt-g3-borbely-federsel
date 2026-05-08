@@ -1,32 +1,31 @@
 import json
 import os
-from typing import Optional, Dict, Any
-from .models import GameState, Player, Location, Quest, NPC, WorldState
+from typing import Optional
+
+from .models import GameState, Player, Location, Quest, WorldState
+
 
 class GameEngine:
-    """
-    The central coordinator for game logic.
-    Holds the ACTIVE GameState and manages data-driven content loading.
-    """
-    
+    """Central coordinator for game logic. Holds the active GameState and
+    manages data-driven content loading."""
+
     def __init__(self, initial_state: Optional[GameState] = None):
         self.state = initial_state or self._create_default_state()
 
     def _create_default_state(self) -> GameState:
         player = Player(name="Aurelian Exile", hp=30, max_hp=30)
-        
-        # Initial Location
+
         start_loc = Location(
             name="The Overgrown Outpost",
             description="A cluster of simple stone huts huddled in the shadow of a massive, cracked crystal spire.",
-            connections=["The Shattered Plaza"]
+            connections=["The Shattered Plaza"],
         )
-        
+
         return GameState(
             player=player,
             current_location=start_loc.name,
             locations={start_loc.name: start_loc},
-            world=WorldState(weather="Ethereal Mist")
+            world=WorldState(weather="Ethereal Mist"),
         )
 
     def initialize_campaign(self):
@@ -35,36 +34,37 @@ class GameEngine:
         self.state.add_log("A millennium has passed since the Golden Age turned to ash. The name 'Aurelia' is now a whisper feared by the superstitious.")
         self.state.add_log("You are but a scavenger in the dirt, clutching a rusted locket—the only proof of a lineage long since forgotten by the world.")
         self.state.add_log("As you gaze at the cracked crystal spire above, your blood begins to tingle—a faint, ancient rhythm drumming beneath your skin.")
-        
-        # Load the tutorial quest
+
         self.load_quest("tutorial_boss")
-        
-        # Record the initial plot point
+
         self.state.record_choice(
-            event="Awakening", 
+            event="Awakening",
             choice="Recognized the call of the Aurelian Spire",
-            tags=["bloodline", "awakening", "elowen"]
+            tags=["bloodline", "awakening", "elowen", "spire"],
         )
 
     def load_quest(self, quest_id: str):
-        """Loads a quest from a JSON file and adds it to the game state."""
+        """Load a quest definition from data/quests/<id>.json."""
         path = f"data/quests/{quest_id}.json"
-        if os.path.exists(path):
-            with open(path, 'r') as f:
-                data = json.load(f)
-                quest = Quest(
-                    name=data['name'],
-                    description=data['description'],
-                    objectives=data['objectives'],
-                    metadata={"guidelines": data['narrative_guidelines']}
-                )
-                self.state.quests[quest_id] = quest
-                self.state.add_log(f"NEW QUEST: {quest.name}")
+        if not os.path.exists(path):
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        quest = Quest(
+            name=data["name"],
+            description=data["description"],
+            objectives=data["objectives"],
+            metadata={"guidelines": data.get("narrative_guidelines", "")},
+        )
+        self.state.quests[quest_id] = quest
+        self.state.add_log(f"NEW QUEST: {quest.name}")
 
     def save_game(self):
         self.state.save_to_file()
 
     def load_game(self):
+        """Replace the active state with the contents of savegame.json.
+        Raises models.IncompatibleSaveError if the save schema is out of date."""
         self.state = GameState.load_from_file()
 
     def use_potion(self):

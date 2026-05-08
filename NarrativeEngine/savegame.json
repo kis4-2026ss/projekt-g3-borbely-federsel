@@ -1,24 +1,78 @@
 {
   "player": {
-    "name": "Adventurer",
-    "hp": 20,
-    "max_hp": 20,
+    "name": "Aurelian Exile",
+    "hp": 30,
+    "max_hp": 30,
     "level": 1,
     "inventory": [
-      "Rusty Dagger"
+      "Fragment of Crystal"
     ],
+    "lineage": "Aurelian Bloodline",
+    "bloodline_resonance": 5,
     "stats": {
       "strength": 10,
       "dexterity": 10,
       "intelligence": 10
     }
   },
-  "location": "The Rusty Gear Tavern",
+  "schema_version": 2,
+  "current_location": "The Overgrown Outpost",
+  "locations": {
+    "The Overgrown Outpost": {
+      "name": "The Overgrown Outpost",
+      "description": "A cluster of simple stone huts huddled in the shadow of a massive, cracked crystal spire.",
+      "connections": [
+        "The Shattered Plaza"
+      ],
+      "interactables": []
+    }
+  },
+  "quests": {
+    "tutorial_boss": {
+      "name": "The Weeping Guardian",
+      "description": "A stone colossus from the Aurelian age stands dormant in the village ruins. It has begun to leak wild mana, poisoning the local wells.",
+      "objectives": [
+        "Locate the Weeping Guardian in the Shattered Plaza",
+        "Find a way to soothe or dismantle the Guardian",
+        "Retrieve the Solar Crest"
+      ],
+      "completed_objectives": [],
+      "status": "active",
+      "metadata": {
+        "guidelines": "The Guardian is a relic of the old world, made of white marble and gold. It 'weeps' liquid mana from its eye-sockets. It is not inherently evil, but malfunctioning. Mention how the player's blood feels warm and begins to hum as they approach the colossus."
+      }
+    }
+  },
+  "npcs": {},
+  "world": {
+    "time_of_day": "Morning",
+    "weather": "Ethereal Mist",
+    "flags": {
+      "spire_touched": true
+    }
+  },
   "log": [
-    "You attempted to: p",
-    "You drank a Health Potion and recovered 10 HP."
+    "SYSTEM: Initializing Elowen Chronicles...",
+    "A millennium has passed since the Golden Age turned to ash. The name 'Aurelia' is now a whisper feared by the superstitious.",
+    "You are but a scavenger in the dirt, clutching a rusted locket\u2014the only proof of a lineage long since forgotten by the world.",
+    "As you gaze at the cracked crystal spire above, your blood begins to tingle\u2014a faint, ancient rhythm drumming beneath your skin.",
+    "NEW QUEST: The Weeping Guardian"
   ],
-  "story_history": [],
+  "story_history": [
+    {
+      "event": "Awakening",
+      "choice_made": "Recognized the call of the Aurelian Spire",
+      "tags": [
+        "bloodline",
+        "awakening",
+        "elowen",
+        "spire"
+      ],
+      "timestamp": "2026-05-08T18:20:37.503091"
+    }
+  ],
+  "session_summary": "",
+  "summary_anchor_turn": 0,
   "turn_count": 0,
   "metadata": {}
 }
