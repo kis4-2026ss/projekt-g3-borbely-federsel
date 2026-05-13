@@ -4,11 +4,58 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 class IncompatibleSaveError(Exception):
     """Raised when a save file's schema version does not match the engine's."""
+
+
+@dataclass
+class DiceRoll:
+    dice: str                  # "1d20", "2d6"
+    rolls: List[int]           # individual die results
+    modifier: int              # total modifier added to sum
+    total: int
+    dc: Optional[int] = None   # difficulty class or AC target
+    success: Optional[bool] = None
+    label: str = ""
+    roll_type: str = "check"   # "check" | "attack" | "damage" | "initiative"
+
+
+@dataclass
+class Weapon:
+    name: str
+    damage_dice: str           # "1d6", "2d8"
+    hit_bonus: int = 0
+    damage_type: str = "slashing"
+    description: str = ""
+
+
+@dataclass
+class Armor:
+    name: str
+    ac_bonus: int
+    description: str = ""
+
+
+@dataclass
+class StatusEffect:
+    name: str
+    duration_turns: int
+    roll_modifier: int = 0     # applied to all dice rolls while active
+    description: str = ""
+
+
+@dataclass
+class Enemy:
+    name: str
+    hp: int
+    max_hp: int
+    ac: int
+    attack_bonus: int = 0
+    damage_dice: str = "1d6"
+    level: int = 1
 
 
 @dataclass
@@ -28,7 +75,29 @@ class Player(Entity):
         "strength": 10,
         "dexterity": 10,
         "intelligence": 10,
+        "constitution": 10,
+        "wisdom": 10,
+        "charisma": 10,
     })
+    equipped_weapon: Optional[Weapon] = None
+    equipped_armor: Optional[Armor] = None
+    gold: int = 0
+    experience: int = 0
+    status_effects: List[StatusEffect] = field(default_factory=list)
+
+    def stat_mod(self, stat: str) -> int:
+        """D&D-style ability modifier: (score - 10) // 2."""
+        return (self.stats.get(stat, 10) - 10) // 2
+
+    @property
+    def ac(self) -> int:
+        dex_bonus = self.stat_mod("dexterity")
+        armor_bonus = self.equipped_armor.ac_bonus if self.equipped_armor else 0
+        return 10 + dex_bonus + armor_bonus
+
+    @property
+    def xp_to_next_level(self) -> int:
+        return self.level * 100
 
     def take_damage(self, amount: int):
         self.hp = max(0, self.hp - amount)
@@ -102,6 +171,10 @@ class GameState:
     summary_anchor_turn: int = 0
     turn_count: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
+    in_combat: bool = False
+    active_enemies: List[Enemy] = field(default_factory=list)
+    combat_log: List[str] = field(default_factory=list)
+    last_rolls: List[DiceRoll] = field(default_factory=list)  # transient — not saved to disk
 
     def add_log(self, message: str):
         self.log.append(message)
@@ -116,8 +189,23 @@ class GameState:
             PlotPoint(event=event, choice_made=choice, tags=tags or [])
         )
 
+    def tick_status_effects(self) -> List[str]:
+        """Decrement all status effect durations; return list of names that expired."""
+        expired = []
+        remaining = []
+        for effect in self.player.status_effects:
+            effect.duration_turns -= 1
+            if effect.duration_turns <= 0:
+                expired.append(effect.name)
+            else:
+                remaining.append(effect)
+        self.player.status_effects = remaining
+        return expired
+
     def to_json(self) -> str:
-        return json.dumps(asdict(self), indent=2)
+        d = asdict(self)
+        d.pop("last_rolls", None)  # transient, never persisted
+        return json.dumps(d, indent=2)
 
     @classmethod
     def from_json(cls, data: str):
@@ -130,16 +218,26 @@ class GameState:
                 f"Delete savegame.json to start a new chronicle."
             )
 
+        # Reconstruct Player with nested objects
         player_data = d.pop("player", {})
+        weapon_data = player_data.pop("equipped_weapon", None)
+        armor_data = player_data.pop("equipped_armor", None)
+        status_data = player_data.pop("status_effects", [])
+
         player = Player(**player_data) if player_data else Player(name="Unknown", hp=10, max_hp=10)
+        player.equipped_weapon = Weapon(**weapon_data) if weapon_data else None
+        player.equipped_armor = Armor(**armor_data) if armor_data else None
+        player.status_effects = [StatusEffect(**e) for e in (status_data or [])]
 
         world_data = d.pop("world", {})
         world = WorldState(**world_data) if world_data else WorldState()
 
-        history = [PlotPoint(**hp) for hp in d.pop("story_history", [])]
+        history = [PlotPoint(**pp) for pp in d.pop("story_history", [])]
         quests = {k: Quest(**v) for k, v in d.pop("quests", {}).items()}
         npcs = {k: NPC(**v) for k, v in d.pop("npcs", {}).items()}
         locations = {k: Location(**v) for k, v in d.pop("locations", {}).items()}
+        active_enemies = [Enemy(**e) for e in d.pop("active_enemies", [])]
+        d.pop("last_rolls", None)  # not in save files, but guard anyway
 
         return cls(
             player=player,
@@ -148,6 +246,7 @@ class GameState:
             quests=quests,
             npcs=npcs,
             locations=locations,
+            active_enemies=active_enemies,
             **d,
         )
 

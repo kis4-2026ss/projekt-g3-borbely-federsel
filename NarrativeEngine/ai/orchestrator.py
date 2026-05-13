@@ -1,9 +1,13 @@
 """Builds the LLM payload from current GameState using a layered memory model:
 
-  1. Hot — the last 6 raw log lines (verbatim recent dialogue)
+  1. Hot  — the last 6 raw log lines (verbatim recent dialogue)
   2. Warm — `state.session_summary`, a rolling LLM-generated paragraph
   3. Cold — `story_history` PlotPoints, with the last 3 always included plus
             tag-fuzzy-matched older points relevant to the current input
+
+Additionally injects:
+  - A scene-type hint (exploration / dialogue / combat) derived from game state
+  - A one-shot campaign-start director's note on turn 0 only
 """
 
 import json
@@ -32,6 +36,7 @@ class PromptOrchestrator:
     def __init__(self, prompt_dir: str = "prompts"):
         self.prompt_dir = prompt_dir
         self.system_config = self._load_json("system_prompt.json")
+        self.campaign_start = self._load_json("campaign_start.json")
 
     def _load_json(self, filename: str) -> Dict[str, Any]:
         path = os.path.join(self.prompt_dir, filename)
@@ -40,7 +45,21 @@ class PromptOrchestrator:
                 return json.load(f)
         return {}
 
-    # ---- context assembly -------------------------------------------------
+    # ── Scene classification ───────────────────────────────────────────────
+
+    def _get_scene_type(self, state: GameState) -> str:
+        """Derive the current narrative mode from game state."""
+        if state.in_combat:
+            return "combat"
+        local_known_npcs = [
+            npc for npc in state.npcs.values()
+            if npc.location == state.current_location and npc.is_known
+        ]
+        if local_known_npcs:
+            return "dialogue"
+        return "exploration"
+
+    # ── Context assembly ───────────────────────────────────────────────────
 
     def _get_lean_state(self, state: GameState) -> Dict[str, Any]:
         active_quests = {
@@ -63,21 +82,68 @@ class PromptOrchestrator:
         location_info = (
             asdict(loc) if loc else {"name": state.current_location, "description": "(unknown)"}
         )
+
+        p = state.player
+        player_info = {
+            "name": p.name,
+            "hp": p.hp,
+            "max_hp": p.max_hp,
+            "level": p.level,
+            "ac": p.ac,
+            "inventory": p.inventory,
+            "stats": p.stats,
+            "lineage": p.lineage,
+            "bloodline_resonance": p.bloodline_resonance,
+            "gold": p.gold,
+            "experience": p.experience,
+            "xp_to_next_level": p.xp_to_next_level,
+            "equipped_weapon": (
+                {
+                    "name": p.equipped_weapon.name,
+                    "damage_dice": p.equipped_weapon.damage_dice,
+                    "hit_bonus": p.equipped_weapon.hit_bonus,
+                }
+                if p.equipped_weapon else None
+            ),
+            "equipped_armor": (
+                {"name": p.equipped_armor.name, "ac_bonus": p.equipped_armor.ac_bonus}
+                if p.equipped_armor else None
+            ),
+            "status_effects": [
+                {
+                    "name": e.name,
+                    "duration_turns": e.duration_turns,
+                    "roll_modifier": e.roll_modifier,
+                }
+                for e in p.status_effects
+            ],
+        }
+
+        combat_info = None
+        if state.in_combat and state.active_enemies:
+            combat_info = {
+                "active": True,
+                "enemies": [
+                    {
+                        "name": e.name,
+                        "hp": e.hp,
+                        "max_hp": e.max_hp,
+                        "ac": e.ac,
+                        "attack_bonus": e.attack_bonus,
+                        "damage_dice": e.damage_dice,
+                    }
+                    for e in state.active_enemies
+                ],
+            }
+
         return {
-            "player": {
-                "name": state.player.name,
-                "hp": state.player.hp,
-                "max_hp": state.player.max_hp,
-                "inventory": state.player.inventory,
-                "stats": state.player.stats,
-                "lineage": state.player.lineage,
-                "bloodline_resonance": state.player.bloodline_resonance,
-            },
+            "player": player_info,
             "location": location_info,
             "active_quests": active_quests,
             "npcs_present": local_npcs,
             "world": asdict(state.world),
             "turn_count": state.turn_count,
+            "combat": combat_info,
         }
 
     def _get_relevant_history(self, state: GameState, user_input: str) -> Dict[str, Any]:
@@ -119,20 +185,60 @@ class PromptOrchestrator:
             "deep_recall": deep_recall,
         }
 
-    # ---- public API -------------------------------------------------------
+    # ── System message assembly ────────────────────────────────────────────
+
+    def _build_system_message(self, scene_type: str) -> str:
+        cfg = self.system_config
+        scene_guidance = cfg.get("scene_type_guidance", {}).get(scene_type, "")
+
+        parts = [
+            cfg.get("system_role", ""),
+            "",
+            f"WORLD SETTING:\n{cfg.get('world_setting', '')}",
+            "",
+            f"PROTAGONIST LORE:\n{cfg.get('protagonist_lore', '')}",
+            "",
+            f"NARRATIVE STYLE:\n{cfg.get('narrative_style', '')}",
+            "",
+            f"DM RULES:\n{cfg.get('dm_rules', '')}",
+            "",
+            f"CURRENT SCENE TYPE: {scene_type.upper()}",
+            f"SCENE GUIDANCE: {scene_guidance}",
+            "",
+            f"STATE RULES:\n{cfg.get('state_instruction', '')}",
+            "",
+            f"OUTPUT FORMAT:\n{cfg.get('output_format', '')}",
+            "",
+            OP_REFERENCE,
+        ]
+        return "\n".join(parts)
+
+    def _build_campaign_start_message(self) -> str:
+        """One-shot director's note injected only on turn 0."""
+        cs = self.campaign_start
+        if not cs:
+            return ""
+        parts = [
+            f"CAMPAIGN START DIRECTIVE — {cs.get('scene_title', 'Opening Scene')}",
+            "",
+            cs.get("director_note", ""),
+            "",
+            f"SCENE SETUP:\n{cs.get('scene_setup', '')}",
+            "",
+            f"REQUIRED STATE CHANGES:\n{cs.get('required_state_changes', '')}",
+            "",
+            f"OPENING HOOK:\n{cs.get('opening_hook', '')}",
+            "",
+            f"LOCKET NOTE:\n{cs.get('locket_note', '')}",
+            "",
+            f"TONE:\n{cs.get('tone_note', '')}",
+        ]
+        return "\n".join(parts)
+
+    # ── Public API ─────────────────────────────────────────────────────────
 
     def build_payload(self, state: GameState, user_input: str) -> List[Dict[str, str]]:
-        cfg = self.system_config
-
-        system_msg = (
-            f"{cfg.get('system_role', '')}\n\n"
-            f"WORLD SETTING: {cfg.get('world_setting', '')}\n"
-            f"PROTAGONIST LORE: {cfg.get('protagonist_lore', '')}\n"
-            f"NARRATIVE STYLE: {cfg.get('narrative_style', '')}\n"
-            f"STATE RULE: {cfg.get('state_instruction', '')}\n\n"
-            f"OUTPUT FORMAT:\n{cfg.get('output_format', '')}\n\n"
-            f"{OP_REFERENCE}"
-        )
+        scene_type = self._get_scene_type(state)
 
         context_payload = {
             "session_summary": state.session_summary or "(no session summary yet)",
@@ -145,13 +251,20 @@ class PromptOrchestrator:
             f"{json.dumps(context_payload, indent=2, default=str)}"
         )
 
-        user_msg = f"PLAYER ACTION: {user_input}"
-
-        return [
-            {"role": "system", "content": system_msg},
+        messages: List[Dict[str, str]] = [
+            {"role": "system", "content": self._build_system_message(scene_type)},
             {"role": "system", "content": context_msg},
-            {"role": "user", "content": user_msg},
         ]
+
+        # Inject the campaign-start director's note only on the very first turn
+        if state.turn_count == 0 and self.campaign_start:
+            messages.append({
+                "role": "system",
+                "content": self._build_campaign_start_message(),
+            })
+
+        messages.append({"role": "user", "content": f"PLAYER ACTION: {user_input}"})
+        return messages
 
 
 def _tokenize(text: str) -> set:
