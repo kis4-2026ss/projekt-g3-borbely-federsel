@@ -4,7 +4,7 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 
 class IncompatibleSaveError(Exception):
@@ -56,6 +56,41 @@ class Enemy:
     attack_bonus: int = 0
     damage_dice: str = "1d6"
     level: int = 1
+
+
+@dataclass
+class ItemDefinition:
+    """A structured item with mechanical properties, authored by the LLM via define_item."""
+    id: str                           # unique slug, e.g. "solar_crest"
+    name: str
+    item_type: str                    # "weapon" | "armor" | "consumable" | "quest" | "lore"
+    description: str
+    value_gold: int = 0
+    damage_dice: Optional[str] = None # weapon only — e.g. "1d8"
+    hit_bonus: int = 0                # weapon only
+    damage_type: str = "slashing"     # weapon only
+    ac_bonus: int = 0                 # armor only
+    heal_amount: int = 0              # consumable only
+    tags: List[str] = field(default_factory=list)
+
+
+@dataclass
+class EncounterTemplate:
+    """A fully authored encounter: stat block + narrative context + rewards.
+    Defined by the LLM when it first introduces a named enemy; instantiated later via spawn_encounter."""
+    id: str                           # unique slug, e.g. "weeping_guardian"
+    name: str
+    description: str                  # what the player sees on approach
+    enemy: Enemy                      # full stat block (nested dataclass)
+    xp_reward: int
+    gold_reward: int = 0
+    item_rewards: List[str] = field(default_factory=list)  # item names or ItemDefinition ids
+    narrative_flavor: str = ""        # combat-description guidance for the LLM
+    defeat_condition: str = "defeat"  # "defeat" | "soothe" | "outwit" | "endure"
+    quest_id: Optional[str] = None
+    tags: List[str] = field(default_factory=list)
+    is_boss: bool = False
+    spawned: bool = False             # True once spawn_encounter has fired
 
 
 @dataclass
@@ -174,6 +209,8 @@ class GameState:
     in_combat: bool = False
     active_enemies: List[Enemy] = field(default_factory=list)
     combat_log: List[str] = field(default_factory=list)
+    encounter_registry: Dict[str, "EncounterTemplate"] = field(default_factory=dict)
+    item_registry: Dict[str, "ItemDefinition"] = field(default_factory=dict)
     last_rolls: List[DiceRoll] = field(default_factory=list)  # transient — not saved to disk
 
     def add_log(self, message: str):
@@ -237,6 +274,23 @@ class GameState:
         npcs = {k: NPC(**v) for k, v in d.pop("npcs", {}).items()}
         locations = {k: Location(**v) for k, v in d.pop("locations", {}).items()}
         active_enemies = [Enemy(**e) for e in d.pop("active_enemies", [])]
+
+        # Reconstruct EncounterTemplate (contains nested Enemy)
+        encounter_registry: Dict[str, EncounterTemplate] = {}
+        for eid, edata in d.pop("encounter_registry", {}).items():
+            enemy_data = edata.pop("enemy", {})
+            enc_enemy = (
+                Enemy(**enemy_data) if enemy_data
+                else Enemy(name="Unknown", hp=10, max_hp=10, ac=10)
+            )
+            encounter_registry[eid] = EncounterTemplate(enemy=enc_enemy, **edata)
+
+        # Reconstruct ItemDefinition (flat — no nested dataclasses)
+        item_registry: Dict[str, ItemDefinition] = {
+            iid: ItemDefinition(**idata)
+            for iid, idata in d.pop("item_registry", {}).items()
+        }
+
         d.pop("last_rolls", None)  # not in save files, but guard anyway
 
         return cls(
@@ -247,6 +301,8 @@ class GameState:
             npcs=npcs,
             locations=locations,
             active_enemies=active_enemies,
+            encounter_registry=encounter_registry,
+            item_registry=item_registry,
             **d,
         )
 

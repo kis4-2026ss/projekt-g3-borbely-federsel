@@ -37,6 +37,7 @@ class PromptOrchestrator:
         self.prompt_dir = prompt_dir
         self.system_config = self._load_json("system_prompt.json")
         self.campaign_start = self._load_json("campaign_start.json")
+        self.encounter_rules = self._load_json("encounter_rules.json")
 
     def _load_json(self, filename: str) -> Dict[str, Any]:
         path = os.path.join(self.prompt_dir, filename)
@@ -136,6 +137,23 @@ class PromptOrchestrator:
                 ],
             }
 
+        # Compact encounter registry summary — LLM can reference defined encounters by id
+        active_enemy_names = {e.name.lower() for e in state.active_enemies}
+        encounter_summary = [
+            {
+                "id": t.id,
+                "name": t.name,
+                "is_boss": t.is_boss,
+                "spawned": t.spawned,
+                "defeat_condition": t.defeat_condition,
+                "tags": t.tags,
+                "quest_id": t.quest_id,
+            }
+            for t in state.encounter_registry.values()
+            # Omit encounters whose enemy is currently active (already shown in combat block)
+            if t.enemy.name.lower() not in active_enemy_names
+        ]
+
         return {
             "player": player_info,
             "location": location_info,
@@ -144,6 +162,7 @@ class PromptOrchestrator:
             "world": asdict(state.world),
             "turn_count": state.turn_count,
             "combat": combat_info,
+            "encounter_registry": encounter_summary,
         }
 
     def _get_relevant_history(self, state: GameState, user_input: str) -> Dict[str, Any]:
@@ -191,6 +210,18 @@ class PromptOrchestrator:
         cfg = self.system_config
         scene_guidance = cfg.get("scene_type_guidance", {}).get(scene_type, "")
 
+        er = self.encounter_rules
+        encounter_rules_text = "\n\n".join(
+            v for v in [
+                er.get("story_attachment_rule", ""),
+                er.get("stat_scaling", ""),
+                er.get("enemy_archetypes", ""),
+                er.get("defeat_conditions", ""),
+                er.get("loot_principles", ""),
+                er.get("item_generation", ""),
+            ] if v
+        )
+
         parts = [
             cfg.get("system_role", ""),
             "",
@@ -210,6 +241,8 @@ class PromptOrchestrator:
             f"OUTPUT FORMAT:\n{cfg.get('output_format', '')}",
             "",
             OP_REFERENCE,
+            "",
+            f"ENCOUNTER & ITEM RULES:\n{encounter_rules_text}",
         ]
         return "\n".join(parts)
 

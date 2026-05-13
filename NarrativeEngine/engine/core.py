@@ -1,8 +1,6 @@
-import json
-import os
 from typing import Optional
 
-from .models import GameState, Player, Location, Quest, WorldState
+from .models import GameState, Player, Location, WorldState
 
 
 class GameEngine:
@@ -29,35 +27,13 @@ class GameEngine:
         )
 
     def initialize_campaign(self):
-        """Kicks off the story and loads the first quest."""
-        self.state.add_log("SYSTEM: Initializing Elowen Chronicles...")
-        self.state.add_log("A millennium has passed since the Golden Age turned to ash. The name 'Aurelia' is now a whisper feared by the superstitious.")
-        self.state.add_log("You are but a scavenger in the dirt, clutching a rusted locket—the only proof of a lineage long since forgotten by the world.")
-        self.state.add_log("As you gaze at the cracked crystal spire above, your blood begins to tingle—a faint, ancient rhythm drumming beneath your skin.")
-
-        self.load_quest("tutorial_boss")
-
+        """Seeds the initial world state. Quests, encounters, and items are created
+        dynamically by the LLM via define_quest, define_encounter, and define_item ops."""
         self.state.record_choice(
-            event="Awakening",
-            choice="Recognized the call of the Aurelian Spire",
+            event="Awakening in the ruins of Elowen",
+            choice="Opened eyes in the Overgrown Outpost",
             tags=["bloodline", "awakening", "elowen", "spire"],
         )
-
-    def load_quest(self, quest_id: str):
-        """Load a quest definition from data/quests/<id>.json."""
-        path = f"data/quests/{quest_id}.json"
-        if not os.path.exists(path):
-            return
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        quest = Quest(
-            name=data["name"],
-            description=data["description"],
-            objectives=data["objectives"],
-            metadata={"guidelines": data.get("narrative_guidelines", "")},
-        )
-        self.state.quests[quest_id] = quest
-        self.state.add_log(f"NEW QUEST: {quest.name}")
 
     def save_game(self):
         self.state.save_to_file()

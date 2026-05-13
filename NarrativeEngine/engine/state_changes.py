@@ -8,7 +8,10 @@ dropped (with a description) rather than crashing the turn loop.
 
 from typing import Dict, Any, List
 
-from .models import Armor, Enemy, GameState, Location, NPC, StatusEffect, Weapon
+from .models import (
+    Armor, Enemy, EncounterTemplate, GameState, ItemDefinition,
+    Location, NPC, Quest, StatusEffect, Weapon,
+)
 from .combat import CombatManager
 from . import dice
 
@@ -296,6 +299,185 @@ def _roll_skill_check(state: GameState, change: Dict[str, Any]) -> str:
     return f"{label}: {result.total} vs DC {dc} → {outcome}"
 
 
+# ── Encounter registry ops ────────────────────────────────────────────────
+
+def _define_encounter(state: GameState, change: Dict[str, Any]) -> str:
+    enc_id = change.get("id")
+    if not isinstance(enc_id, str) or not enc_id.strip():
+        raise ValueError("'id' must be a non-empty string")
+    enc_id = enc_id.strip().lower().replace(" ", "_")
+
+    name = change.get("name", enc_id)
+    description = change.get("description", "")
+    xp_reward = max(0, _coerce_int(change.get("xp_reward", 50), field="xp_reward"))
+    gold_reward = max(0, _coerce_int(change.get("gold_reward", 0), field="gold_reward"))
+    item_rewards = change.get("item_rewards", [])
+    if not isinstance(item_rewards, list):
+        item_rewards = []
+    item_rewards = [r for r in item_rewards if isinstance(r, str)]
+
+    enemy_name = change.get("enemy_name", name)
+    enemy_hp = max(1, _coerce_int(change.get("enemy_hp", 10), field="enemy_hp"))
+    enemy_ac = max(1, _coerce_int(change.get("enemy_ac", 10), field="enemy_ac"))
+    enemy_atk = _coerce_int(change.get("enemy_attack_bonus", 0), field="enemy_attack_bonus")
+    enemy_dmg = change.get("enemy_damage_dice", "1d6")
+    enemy_lvl = max(1, _coerce_int(change.get("enemy_level", 1), field="enemy_level"))
+
+    enemy = Enemy(
+        name=enemy_name if isinstance(enemy_name, str) else name,
+        hp=enemy_hp,
+        max_hp=enemy_hp,
+        ac=enemy_ac,
+        attack_bonus=enemy_atk,
+        damage_dice=enemy_dmg if isinstance(enemy_dmg, str) else "1d6",
+        level=enemy_lvl,
+    )
+    template = EncounterTemplate(
+        id=enc_id,
+        name=name if isinstance(name, str) else enc_id,
+        description=description if isinstance(description, str) else "",
+        enemy=enemy,
+        xp_reward=xp_reward,
+        gold_reward=gold_reward,
+        item_rewards=item_rewards,
+        narrative_flavor=change.get("narrative_flavor", "") if isinstance(change.get("narrative_flavor"), str) else "",
+        defeat_condition=change.get("defeat_condition", "defeat") if isinstance(change.get("defeat_condition"), str) else "defeat",
+        quest_id=change.get("quest_id") if isinstance(change.get("quest_id"), str) else None,
+        tags=[t for t in (change.get("tags") or []) if isinstance(t, str)],
+        is_boss=bool(change.get("is_boss", False)),
+    )
+    state.encounter_registry[enc_id] = template
+    boss_tag = " [BOSS]" if template.is_boss else ""
+    return f"encounter defined: {template.name}{boss_tag} (id: {enc_id})"
+
+
+def _spawn_encounter(state: GameState, change: Dict[str, Any]) -> str:
+    enc_id = change.get("id")
+    if not isinstance(enc_id, str):
+        raise ValueError("'id' must be a string")
+    enc_id = enc_id.strip().lower().replace(" ", "_")
+    template = state.encounter_registry.get(enc_id)
+    if template is None:
+        raise ValueError(f"No encounter defined with id '{enc_id}'. Use define_encounter first.")
+
+    src = template.enemy
+    enemy = Enemy(
+        name=src.name,
+        hp=src.max_hp,
+        max_hp=src.max_hp,
+        ac=src.ac,
+        attack_bonus=src.attack_bonus,
+        damage_dice=src.damage_dice,
+        level=src.level,
+    )
+    state.active_enemies.append(enemy)
+    state.in_combat = True
+    state.combat_log.clear()
+    template.spawned = True
+
+    cm = CombatManager(state)
+    p_init, e_init = cm.roll_initiative()
+    state.last_rolls.extend([p_init, e_init])
+
+    player_first = p_init.total >= e_init.total
+    order = "You act first." if player_first else f"{enemy.name} acts first."
+    state.combat_log.append(f"Combat started. {order}")
+    return f"encounter spawned: {template.name} (HP:{enemy.hp} AC:{enemy.ac}) | {order}"
+
+
+def _loot_encounter(state: GameState, change: Dict[str, Any]) -> str:
+    enc_id = change.get("id")
+    if not isinstance(enc_id, str):
+        raise ValueError("'id' must be a string")
+    enc_id = enc_id.strip().lower().replace(" ", "_")
+    template = state.encounter_registry.get(enc_id)
+    if template is None:
+        raise ValueError(f"No encounter defined with id '{enc_id}'")
+
+    parts: List[str] = []
+    if template.xp_reward > 0:
+        desc = _award_xp(state, {"op": "award_xp", "amount": template.xp_reward})
+        if desc:
+            parts.append(desc)
+    if template.gold_reward > 0:
+        state.player.gold += template.gold_reward
+        parts.append(f"+{template.gold_reward} gold")
+    for item_name in template.item_rewards:
+        defined = next(
+            (it for it in state.item_registry.values() if it.name == item_name or it.id == item_name),
+            None,
+        )
+        if defined:
+            _give_defined_item(state, {"op": "give_defined_item", "id": defined.id})
+            parts.append(f"received: {defined.name}")
+        else:
+            state.player.add_item(item_name)
+            parts.append(f"received: {item_name}")
+    return "loot: " + " | ".join(parts) if parts else "no loot"
+
+
+# ── Item registry ops ──────────────────────────────────────────────────────
+
+def _define_item(state: GameState, change: Dict[str, Any]) -> str:
+    item_id = change.get("id")
+    if not isinstance(item_id, str) or not item_id.strip():
+        raise ValueError("'id' must be a non-empty string")
+    item_id = item_id.strip().lower().replace(" ", "_")
+
+    name = change.get("name", item_id)
+    item_type = change.get("item_type", "lore")
+    valid_types = {"weapon", "armor", "consumable", "quest", "lore"}
+    if item_type not in valid_types:
+        item_type = "lore"
+    description = change.get("description", "")
+
+    item = ItemDefinition(
+        id=item_id,
+        name=name if isinstance(name, str) else item_id,
+        item_type=item_type,
+        description=description if isinstance(description, str) else "",
+        value_gold=max(0, _coerce_int(change.get("value_gold", 0), field="value_gold")),
+        damage_dice=change.get("damage_dice") if isinstance(change.get("damage_dice"), str) else None,
+        hit_bonus=_coerce_int(change.get("hit_bonus", 0), field="hit_bonus"),
+        damage_type=change.get("damage_type", "slashing") if isinstance(change.get("damage_type"), str) else "slashing",
+        ac_bonus=_coerce_int(change.get("ac_bonus", 0), field="ac_bonus"),
+        heal_amount=max(0, _coerce_int(change.get("heal_amount", 0), field="heal_amount")),
+        tags=[t for t in (change.get("tags") or []) if isinstance(t, str)],
+    )
+    state.item_registry[item_id] = item
+    return f"item defined: {item.name} ({item.item_type}, id: {item_id})"
+
+
+def _give_defined_item(state: GameState, change: Dict[str, Any]) -> str:
+    item_id = change.get("id")
+    if not isinstance(item_id, str):
+        raise ValueError("'id' must be a string")
+    item_id = item_id.strip().lower().replace(" ", "_")
+    item = state.item_registry.get(item_id)
+    if item is None:
+        raise ValueError(f"No item defined with id '{item_id}'. Use define_item first.")
+
+    state.player.add_item(item.name)
+    extra = ""
+    if item.item_type == "weapon" and item.damage_dice:
+        state.player.equipped_weapon = Weapon(
+            name=item.name,
+            damage_dice=item.damage_dice,
+            hit_bonus=item.hit_bonus,
+            damage_type=item.damage_type,
+            description=item.description,
+        )
+        extra = " (equipped)"
+    elif item.item_type == "armor":
+        state.player.equipped_armor = Armor(
+            name=item.name,
+            ac_bonus=item.ac_bonus,
+            description=item.description,
+        )
+        extra = " (equipped)"
+    return f"received: {item.name}{extra}"
+
+
 # ── World / location ops ───────────────────────────────────────────────────
 
 def _move_to(state: GameState, change: Dict[str, Any]) -> str:
@@ -360,6 +542,30 @@ def _set_world_flag(state: GameState, change: Dict[str, Any]) -> str:
 
 
 # ── Quest ops ──────────────────────────────────────────────────────────────
+
+def _define_quest(state: GameState, change: Dict[str, Any]) -> str:
+    quest_id = change.get("quest_id")
+    if not isinstance(quest_id, str) or not quest_id.strip():
+        raise ValueError("'quest_id' must be a non-empty string")
+    quest_id = quest_id.strip().lower().replace(" ", "_")
+    name = change.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("'name' must be a non-empty string")
+    description = change.get("description", "")
+    objectives = change.get("objectives", [])
+    if not isinstance(objectives, list):
+        objectives = []
+    objectives = [o for o in objectives if isinstance(o, str) and o.strip()]
+    guidelines = change.get("guidelines", "")
+
+    state.quests[quest_id] = Quest(
+        name=name.strip(),
+        description=description if isinstance(description, str) else "",
+        objectives=objectives,
+        metadata={"guidelines": guidelines if isinstance(guidelines, str) else ""},
+    )
+    return f"quest defined: {name.strip()} ({len(objectives)} objectives)"
+
 
 def _advance_quest(state: GameState, change: Dict[str, Any]) -> str:
     quest_id = change.get("quest_id")
@@ -477,6 +683,13 @@ _HANDLERS = {
     "remove_status": _remove_status,
     # stats
     "set_stat": _set_stat,
+    # encounter registry
+    "define_encounter": _define_encounter,
+    "spawn_encounter": _spawn_encounter,
+    "loot_encounter": _loot_encounter,
+    # item registry
+    "define_item": _define_item,
+    "give_defined_item": _give_defined_item,
     # combat
     "start_combat": _start_combat,
     "end_combat": _end_combat,
@@ -489,6 +702,7 @@ _HANDLERS = {
     "set_weather": _set_weather,
     "set_world_flag": _set_world_flag,
     # quests
+    "define_quest": _define_quest,
     "advance_quest": _advance_quest,
     "complete_quest": _complete_quest,
     "fail_quest": _fail_quest,
@@ -498,7 +712,10 @@ _HANDLERS = {
 }
 
 
-OP_REFERENCE = """Available state_changes ops (use the exact 'op' string):
+OP_REFERENCE = """Available state_changes ops (use the exact 'op' string).
+See ENCOUNTER & ITEM RULES (below) for when to use define_encounter vs start_combat.
+
+
 
 INVENTORY / HEALTH
 - {"op":"add_item","value":"<item>"}
@@ -523,7 +740,16 @@ STATUS EFFECTS
 STATS (score 1–30)
 - {"op":"set_stat","stat":"strength|dexterity|intelligence|constitution|wisdom|charisma","value":<int>}
 
-COMBAT
+ENCOUNTER REGISTRY (preferred for named enemies — see ENCOUNTER & ITEM RULES)
+- {"op":"define_encounter","id":"<slug>","name":"<name>","description":"<approach text>","enemy_name":"<name>","enemy_hp":<int>,"enemy_ac":<int>,"enemy_attack_bonus":<int>,"enemy_damage_dice":"1d6","enemy_level":<int>,"xp_reward":<int>,"gold_reward":<int>,"item_rewards":["<name>"],"narrative_flavor":"<combat prose guidance>","defeat_condition":"defeat|soothe|outwit|endure","quest_id":"<id>|null","tags":["<keyword>"],"is_boss":<bool>}
+- {"op":"spawn_encounter","id":"<slug>"}
+- {"op":"loot_encounter","id":"<slug>"}
+
+ITEM REGISTRY (for weapons, armor, and quest items with mechanical properties)
+- {"op":"define_item","id":"<slug>","name":"<name>","item_type":"weapon|armor|consumable|quest|lore","description":"<text>","value_gold":<int>,"damage_dice":"1d8","hit_bonus":<int>,"damage_type":"slashing|piercing|bludgeoning","ac_bonus":<int>,"heal_amount":<int>,"tags":["<keyword>"]}
+- {"op":"give_defined_item","id":"<slug>"}
+
+COMBAT (use start_combat for ad-hoc/unnamed enemies; use spawn_encounter for defined templates)
 - {"op":"start_combat","enemy_name":"<name>","enemy_hp":<int>,"enemy_ac":<int>,"enemy_attack_bonus":<int>,"enemy_damage_dice":"1d6","enemy_level":<int>}
 - {"op":"roll_attack","target":"<enemy name>"}
 - {"op":"end_combat","outcome":"victory|fled|defeat"}
@@ -537,6 +763,7 @@ WORLD / LOCATION
 - {"op":"set_world_flag","key":"<key>","value":<true|false>}
 
 QUESTS
+- {"op":"define_quest","quest_id":"<slug>","name":"<name>","description":"<text>","objectives":["<obj1>","<obj2>"],"guidelines":"<narrative hints for future turns>"}
 - {"op":"advance_quest","quest_id":"<id>","objective_index":<int>}
 - {"op":"complete_quest","quest_id":"<id>"}
 - {"op":"fail_quest","quest_id":"<id>"}
