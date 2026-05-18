@@ -407,14 +407,22 @@ class ChronosApp(App):
 # ── Module-level helpers ──────────────────────────────────────────────────
 
 
+def _styled_segment(content: str, tag: str) -> str:
+    """Emit a tagged markup span, or '' when content is empty. Avoids
+    emitting `[tag][/tag]` empty spans that Textual's markup parser rejects."""
+    if not content:
+        return ""
+    return f"[{tag}]{content}[/{tag}]"
+
+
 def _bar(current: int, maximum: int, width: int = 16) -> str:
     if maximum <= 0:
-        return f"[dim]{'░' * width}[/]"
+        return _styled_segment("░" * width, "dim")
     ratio = current / maximum
     filled = max(0, min(width, int(ratio * width)))
     empty = width - filled
     color = "green" if ratio > 0.6 else "yellow" if ratio > 0.3 else "red"
-    return f"[{color}]{'█' * filled}[/][dim]{'░' * empty}[/]"
+    return _styled_segment("█" * filled, color) + _styled_segment("░" * empty, "dim")
 
 
 def _hp_bar(current: int, maximum: int) -> str:
@@ -426,7 +434,7 @@ def _xp_bar(experience: int, level: int) -> str:
     ratio = min(experience / max(threshold, 1), 1.0)
     filled = max(0, min(16, int(ratio * 16)))
     empty = 16 - filled
-    bar = f"[blue]{'█' * filled}[/][dim]{'░' * empty}[/]"
+    bar = _styled_segment("█" * filled, "blue") + _styled_segment("░" * empty, "dim")
     return f"XP  {bar} {experience}/{threshold}  Lv.{level}"
 
 
@@ -435,7 +443,7 @@ def _enemy_hp_bar(enemy: Enemy) -> str:
     filled = max(0, min(14, int(ratio * 14)))
     empty = 14 - filled
     color = "green" if ratio > 0.6 else "yellow" if ratio > 0.3 else "red"
-    bar = f"[{color}]{'█' * filled}[/][dim]{'░' * empty}[/]"
+    bar = _styled_segment("█" * filled, color) + _styled_segment("░" * empty, "dim")
     return f"HP [{bar}] {enemy.hp}/{enemy.max_hp}"
 
 
