@@ -154,6 +154,21 @@ class PromptOrchestrator:
             if t.enemy.name.lower() not in active_enemy_names
         ]
 
+        last_round_rolls = [
+            {
+                "label": r.label,
+                "type": r.roll_type,
+                "dice": r.dice,
+                "total": r.total,
+                "modifier": r.modifier,
+                "dc": r.dc,
+                "success": r.success,
+            }
+            for r in state.last_rolls
+        ] or None
+
+        combat_log_tail = state.combat_log[-4:] if state.combat_log else None
+
         return {
             "player": player_info,
             "location": location_info,
@@ -163,6 +178,8 @@ class PromptOrchestrator:
             "turn_count": state.turn_count,
             "combat": combat_info,
             "encounter_registry": encounter_summary,
+            "last_round_rolls": last_round_rolls,
+            "combat_log_tail": combat_log_tail,
         }
 
     def _get_relevant_history(self, state: GameState, user_input: str) -> Dict[str, Any]:

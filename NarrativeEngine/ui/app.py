@@ -17,6 +17,42 @@ SUMMARY_REFRESH_TURNS = 8
 SUMMARY_INPUT_LOG_LINES = 16
 
 
+# ── State-change visual classification ─────────────────────────────────────
+# Major ops get their own icon + styled line in the game log.
+# Anything not listed here collapses into the single dim cyan summary.
+_CHANGE_TIERS: Dict[str, tuple] = {
+    "add_item":          ("📦", "bold green",   "Picked up"),
+    "give_defined_item": ("📦", "bold green",   "Picked up"),
+    "remove_item":       ("📤", "yellow",       "Dropped"),
+    "equip_weapon":      ("⚔",  "bold yellow",  "Equipped"),
+    "equip_armor":       ("🛡", "bold yellow",  "Equipped"),
+    "unequip_weapon":    ("⚔",  "yellow",       "Unequipped"),
+    "unequip_armor":     ("🛡", "yellow",       "Unequipped"),
+    "start_combat":      ("⚔",  "bold red",     "Combat"),
+    "spawn_encounter":   ("⚔",  "bold red",     "Combat"),
+    "end_combat":        ("⚔",  "bold cyan",    "Combat ends"),
+    "loot_encounter":    ("💰", "bold yellow",  "Loot"),
+    "move_to":           ("🗺", "bold cyan",    "Travel"),
+    "discover_location": ("🗺", "cyan",         "Discovered"),
+    "add_npc":           ("👤", "bold",         "Met"),
+    "advance_quest":     ("★",  "bold magenta", "Quest"),
+    "complete_quest":    ("★",  "bold green",   "Quest complete"),
+    "fail_quest":        ("★",  "bold red",     "Quest failed"),
+    "define_quest":      ("★",  "magenta",      "New quest"),
+    "award_xp":          ("✨", "blue",         "XP"),
+    "damage_player":     ("💥", "red",          "Damage"),
+    "heal_player":       ("✚",  "green",        "Healed"),
+}
+
+_ITEM_TYPE_ICONS: Dict[str, str] = {
+    "weapon":     "⚔",
+    "armor":      "🛡",
+    "consumable": "🧪",
+    "quest":      "★",
+    "lore":       "📜",
+}
+
+
 class StatDisplay(Static):
     """Sidebar section widget — renders Rich-markup text reactively."""
     renderable = reactive("")
@@ -72,6 +108,7 @@ class ChronosApp(App):
         ("s", "save_game", "Save"),
         ("p", "use_potion", "Potion"),
         ("a", "quick_attack", "Attack"),
+        ("ctrl+i", "open_inventory", "Inventory"),
     ]
 
     def __init__(self, **kwargs):
@@ -103,7 +140,6 @@ class ChronosApp(App):
 
     async def on_mount(self) -> None:
         self.engine.initialize_campaign()
-        self.engine.state.player.add_item("Health Potion")
         self.update_ui()
         self.query_one("#player-input").focus()
         await self.process_narrative("I awaken.")
@@ -132,7 +168,6 @@ class ChronosApp(App):
         state = self.engine.state
         log_widget = self.query_one("#game-log", RichLog)
 
-        state.last_rolls.clear()
         log_widget.write("[italic dim]The air shimmers as the narrator speaks...[/]")
 
         prior_location = state.current_location
@@ -140,18 +175,17 @@ class ChronosApp(App):
             qid: q.status for qid, q in state.quests.items()
         }
 
+        # Build payload before clearing last_rolls so the previous turn's dice
+        # results are visible to the LLM as last_round_rolls in the context.
         payload = self.orchestrator.build_payload(state, user_input)
+        state.last_rolls.clear()
         raw = await self.ai_client.generate_narrative(payload, json_mode=True)
         parsed = parse_response(raw)
 
-        change_descs = apply_changes(state, parsed.state_changes)
+        change_records = apply_changes(state, parsed.state_changes)
 
-        # Display any dice rolls that occurred during state changes
-        if state.last_rolls:
-            log_widget.write("")
-            for r in state.last_rolls:
-                log_widget.write(_format_dice_roll(r))
-
+        # Record LLM-emitted plot point (display happens further down)
+        llm_plot_event: str = ""
         if parsed.plot_point:
             event_text = parsed.plot_point.get("event")
             if isinstance(event_text, str) and event_text.strip():
@@ -165,15 +199,30 @@ class ChronosApp(App):
                 state.record_choice(
                     event=event_text.strip(), choice=choice, tags=tags
                 )
+                llm_plot_event = event_text.strip()
 
-        self._record_heuristic_plot_points(prior_location, prior_quest_status, user_input)
+        heuristic_plots = self._record_heuristic_plot_points(
+            prior_location, prior_quest_status, user_input
+        )
+
+        # ── Render order: dice → narrative → state changes → plot points → warnings
+        if state.last_rolls:
+            log_widget.write("")
+            for r in state.last_rolls:
+                log_widget.write(_format_dice_roll(r))
 
         narrative = parsed.narrative or "(silence)"
         state.add_log(f"NARRATOR: {narrative}")
         log_widget.write("")
         log_widget.write(narrative)
-        if change_descs:
-            log_widget.write(f"[dim cyan]· {' | '.join(change_descs)}[/]")
+
+        _render_state_changes(log_widget, change_records)
+
+        if llm_plot_event:
+            log_widget.write(f"[italic gold1]★ Plot: {llm_plot_event}[/]")
+        for event_text in heuristic_plots:
+            log_widget.write(f"[italic gold1]★ Plot: {event_text}[/]")
+
         if parsed.parse_warnings:
             log_widget.write(f"[dim yellow]⚠ {'; '.join(parsed.parse_warnings)}[/]")
 
@@ -191,22 +240,34 @@ class ChronosApp(App):
         prior_location: str,
         prior_quest_status: Dict[str, str],
         user_input: str,
-    ) -> None:
+    ) -> List[str]:
+        """Record automatic plot points for travel and quest-status changes.
+        Returns the event texts so the caller can surface them in the log."""
         state = self.engine.state
+        events: List[str] = []
         if state.current_location != prior_location:
+            event_text = (
+                f"Travelled from {prior_location} to {state.current_location}"
+            )
             state.record_choice(
-                event=f"Travelled from {prior_location} to {state.current_location}",
+                event=event_text,
                 choice=user_input,
                 tags=["travel", _slug(prior_location), _slug(state.current_location)],
             )
+            events.append(event_text)
         for qid, q in state.quests.items():
             old_status = prior_quest_status.get(qid)
             if old_status and old_status != q.status:
+                event_text = (
+                    f"Quest '{q.name}' status: {old_status} → {q.status}"
+                )
                 state.record_choice(
-                    event=f"Quest '{q.name}' status: {old_status} → {q.status}",
+                    event=event_text,
                     choice=user_input,
                     tags=["quest", q.status, qid],
                 )
+                events.append(event_text)
+        return events
 
     def _should_refresh_summary(self) -> bool:
         s = self.engine.state
@@ -246,6 +307,12 @@ class ChronosApp(App):
             log.write("[bold red]SYSTEM: No save file found.[/]")
         except Exception as e:
             log.write(f"[bold red]SYSTEM: Load failed: {e}[/]")
+
+    def action_open_inventory(self) -> None:
+        # Lazy import avoids a module-load circular dependency with ui.inventory_modal,
+        # which imports _render_inventory_item from this module.
+        from ui.inventory_modal import InventoryModal
+        self.push_screen(InventoryModal(self.engine, self.update_ui))
 
     async def action_quick_attack(self) -> None:
         """Press 'a' during combat to immediately send an attack command."""
@@ -317,7 +384,10 @@ class ChronosApp(App):
         # ── Inventory & Quests panel ──────────────────────────────────────
         inv_lines: List[str] = ["[bold]INVENTORY[/]"]
         if p.inventory:
-            inv_lines.extend(f"• {item}" for item in p.inventory)
+            inv_lines.extend(
+                _render_inventory_item(state, item, is_equipped=self.engine.is_equipped(item))
+                for item in p.inventory
+            )
         else:
             inv_lines.append("[dim](empty)[/]")
         inv_lines.append("")
@@ -425,6 +495,82 @@ def _format_dice_roll(roll: DiceRoll) -> str:
 
 def _slug(text: str) -> str:
     return "_".join(text.lower().split())[:32] if text else "unknown"
+
+
+# ── State-change rendering ────────────────────────────────────────────────
+
+def _strip_op_prefix(desc: str, op: str) -> str:
+    """Trim redundant op-name prefixes from a description so the tier label
+    doesn't double up (e.g. 'Picked up: +Rusted Blade (inventory)')."""
+    prefixes = {
+        "add_item":          ("+", " (inventory)"),
+        "remove_item":       ("-", " (inventory)"),
+        "move_to":           ("moved to ", ""),
+        "discover_location": ("discovered: ", ""),
+        "add_npc":           ("NPC met: ", ""),
+        "define_quest":      ("quest defined: ", ""),
+        "complete_quest":    ("quest completed: ", ""),
+        "fail_quest":        ("quest failed: ", ""),
+        "loot_encounter":    ("loot: ", ""),
+        "give_defined_item": ("received: ", ""),
+        "equip_weapon":      ("equipped weapon: ", ""),
+        "equip_armor":       ("equipped armor: ", ""),
+        "unequip_weapon":    ("unequipped weapon: ", ""),
+        "unequip_armor":     ("unequipped armor: ", ""),
+        "award_xp":          ("", ""),
+        "damage_player":     ("player HP -", ""),
+        "heal_player":       ("player HP +", ""),
+    }
+    head, tail = prefixes.get(op, ("", ""))
+    out = desc
+    if head and out.startswith(head):
+        out = out[len(head):]
+    if tail and out.endswith(tail):
+        out = out[: -len(tail)]
+    return out
+
+
+def _render_state_changes(log_widget: RichLog, records: List[tuple]) -> None:
+    """Render state-change records into the game log. Major-tier ops get their
+    own styled line; everything else collapses into one dim cyan summary."""
+    if not records:
+        return
+    minor: List[str] = []
+    for op, desc in records:
+        if desc.startswith("["):  # failure / skip / invalid
+            log_widget.write(f"[dim red]⚠ {desc}[/]")
+            continue
+        tier = _CHANGE_TIERS.get(op)
+        if tier is None:
+            minor.append(desc)
+            continue
+        icon, style, label = tier
+        payload = _strip_op_prefix(desc, op)
+        log_widget.write(f"[{style}]{icon} {label}: {payload}[/]")
+    if minor:
+        log_widget.write(f"[dim cyan]· {' | '.join(minor)}[/]")
+
+
+# ── Inventory rendering ───────────────────────────────────────────────────
+
+def _lookup_item_def(state, name: str):
+    """Find an ItemDefinition by display name. Pattern mirrored from
+    engine.state_changes._loot_encounter."""
+    return next(
+        (it for it in state.item_registry.values() if it.name == name),
+        None,
+    )
+
+
+def _render_inventory_item(state, item_name: str, is_equipped: bool = False) -> str:
+    """Render one inventory entry. Uses item_registry metadata when available;
+    falls back to the plain bullet for ad-hoc add_item entries. When is_equipped
+    is True, an '(equipped)' marker is appended."""
+    defn = _lookup_item_def(state, item_name)
+    icon = "•" if defn is None else _ITEM_TYPE_ICONS.get(defn.item_type, "•")
+    type_tag = "" if defn is None else f" [dim]({defn.item_type})[/]"
+    equipped_tag = " [bold yellow](equipped)[/]" if is_equipped else ""
+    return f"{icon} {item_name}{type_tag}{equipped_tag}"
 
 
 if __name__ == "__main__":

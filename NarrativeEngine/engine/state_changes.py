@@ -6,7 +6,7 @@ strict handler. Unknown ops, malformed payloads, and out-of-range values are
 dropped (with a description) rather than crashing the turn loop.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 from .models import (
     Armor, Enemy, EncounterTemplate, GameState, ItemDefinition,
@@ -16,29 +16,34 @@ from .combat import CombatManager
 from . import dice
 
 
-def apply_changes(state: GameState, changes: List[Dict[str, Any]]) -> List[str]:
-    """Apply LLM-proposed state changes. Returns short human-readable descriptions
-    for each change actually applied (or skipped, with a reason)."""
-    descriptions: List[str] = []
+def apply_changes(state: GameState, changes: List[Dict[str, Any]]) -> List[Tuple[str, str]]:
+    """Apply LLM-proposed state changes. Returns (op_name, description) tuples
+    for each change actually applied (or skipped, with a reason).
+
+    The op_name lets the UI classify and style each record without parsing the
+    description text. Skip and global-validation failures use synthetic op names
+    prefixed with '_' ('_invalid', '_skipped'); per-op failures keep their real
+    op name so they're still grouped, but their description is bracketed."""
+    records: List[Tuple[str, str]] = []
     if not isinstance(changes, list):
-        return ["[state_changes was not a list — ignored]"]
+        return [("_invalid", "[state_changes was not a list — ignored]")]
 
     for change in changes:
         if not isinstance(change, dict):
-            descriptions.append("[skipped: change entry is not an object]")
+            records.append(("_skipped", "[skipped: change entry is not an object]"))
             continue
         op = change.get("op")
         handler = _HANDLERS.get(op)
         if handler is None:
-            descriptions.append(f"[skipped: unknown op '{op}']")
+            records.append(("_skipped", f"[skipped: unknown op '{op}']"))
             continue
         try:
             desc = handler(state, change)
             if desc:
-                descriptions.append(desc)
+                records.append((op, desc))
         except Exception as e:
-            descriptions.append(f"[op '{op}' failed: {e}]")
-    return descriptions
+            records.append((op, f"[op '{op}' failed: {e}]"))
+    return records
 
 
 # ── Player inventory / health ops ──────────────────────────────────────────
@@ -114,6 +119,22 @@ def _equip_armor(state: GameState, change: Dict[str, Any]) -> str:
         description=description if isinstance(description, str) else "",
     )
     return f"equipped armor: {name.strip()} (+{ac_bonus} AC)"
+
+
+def _unequip_weapon(state: GameState, change: Dict[str, Any]) -> str:
+    if state.player.equipped_weapon is None:
+        return ""
+    name = state.player.equipped_weapon.name
+    state.player.equipped_weapon = None
+    return f"unequipped weapon: {name}"
+
+
+def _unequip_armor(state: GameState, change: Dict[str, Any]) -> str:
+    if state.player.equipped_armor is None:
+        return ""
+    name = state.player.equipped_armor.name
+    state.player.equipped_armor = None
+    return f"unequipped armor: {name}"
 
 
 # ── XP / Gold ops ──────────────────────────────────────────────────────────
@@ -674,6 +695,8 @@ _HANDLERS = {
     # equipment
     "equip_weapon": _equip_weapon,
     "equip_armor": _equip_armor,
+    "unequip_weapon": _unequip_weapon,
+    "unequip_armor": _unequip_armor,
     # progression
     "award_xp": _award_xp,
     "add_gold": _add_gold,
@@ -727,6 +750,8 @@ INVENTORY / HEALTH
 EQUIPMENT
 - {"op":"equip_weapon","name":"<name>","damage_dice":"1d8","hit_bonus":<int>,"damage_type":"slashing|piercing|bludgeoning"}
 - {"op":"equip_armor","name":"<name>","ac_bonus":<int>}
+- {"op":"unequip_weapon"}
+- {"op":"unequip_armor"}
 
 PROGRESSION
 - {"op":"award_xp","amount":<int>}
