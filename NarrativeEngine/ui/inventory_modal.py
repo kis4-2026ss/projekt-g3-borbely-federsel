@@ -27,24 +27,31 @@ class InventoryModal(ModalScreen[None]):
         background: #1e1e1e;
         border: thick $accent;
         padding: 1 2;
+        color: #cccccc;
     }
     #equipped-header {
         height: auto;
         padding-bottom: 1;
         border-bottom: solid $accent;
+        color: #cccccc;
     }
     #inventory-list {
         height: 1fr;
         margin-top: 1;
-        background: #121212;
+        background: #1a1a1a;
+        color: #cccccc;
     }
     #status-line {
         height: 1;
         margin-top: 1;
+        color: #cccccc;
     }
     #key-hints {
         height: 1;
         margin-top: 1;
+        color: #888888;
+        background: #1a1a1a;
+        text-align: center;
     }
     """
 
@@ -70,9 +77,8 @@ class InventoryModal(ModalScreen[None]):
             yield ListView(*self._build_list_items(), id="inventory-list")
             yield Static("", id="status-line", markup=True)
             yield Static(
-                "[dim][E] Equip   [X] Unequip   [U] Use   [D] Drop   [Esc] Close[/]",
+                "E Equip  X Unequip  U Use  D Drop  Esc Close",
                 id="key-hints",
-                markup=True,
             )
 
     # ── Rendering ─────────────────────────────────────────────────────────
@@ -188,4 +194,5 @@ class InventoryModal(ModalScreen[None]):
 
     def action_close(self) -> None:
         self.refresh_parent()
+        self.dismiss()
  

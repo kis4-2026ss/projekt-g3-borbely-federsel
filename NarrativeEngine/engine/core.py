@@ -50,7 +50,7 @@ class GameEngine:
 
     def _create_default_state(self) -> GameState:
         stats = {
-            stat: random.randint(1, 10)
+            stat: max(1, 10 + random.randint(-4, 4))
             for stat in (
                 "strength", "dexterity", "intelligence",
                 "constitution", "wisdom", "charisma",

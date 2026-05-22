@@ -94,7 +94,8 @@ class ChronosApp(App):
     #key-hints-bar {
         height: 1;
         text-align: center;
-        color: $text-muted;
+        color: #888888;
+        background: #1a1a1a;
         margin: 0 1 1 1;
     }
 
@@ -112,16 +113,14 @@ class ChronosApp(App):
     """
 
     BINDINGS = [
-        ("q", "quit", "[Q] Quit"),
-        ("d", "toggle_dark", "[D] Toggle Dark"),
-        ("s", "save_game", "[S] Save"),
-        ("p", "use_potion", "[P] Potion"),
-        ("a", "quick_attack", "[A] Attack"),
-        # priority=True so the App intercepts 'i' before Input swallows it.
-        # action_open_inventory inserts the character when the user is typing.
-        Binding("i", "open_inventory", "[I] Inventory", priority=True),
-        # 'c' opens the combat screen when in combat
-        Binding("c", "open_combat", "[C] Combat", priority=True),
+        ("ctrl+q", "quit", "Quit"),
+        ("ctrl+d", "toggle_dark", "Dark"),
+        ("ctrl+s", "save_game", "Save"),
+        ("ctrl+l", "load_game", "Load"),
+        ("ctrl+p", "use_potion", "Potion"),
+        ("ctrl+a", "quick_attack", "Attack"),
+        ("ctrl+e", "open_inventory", "Inventory"),
+        ("ctrl+f", "open_combat", "Combat"),
     ]
 
     def __init__(self, **kwargs):
@@ -150,12 +149,28 @@ class ChronosApp(App):
                         id="player-input",
                     )
                 yield Static(
-                    "[dim][A] Attack   [C] Combat   [I] Inventory"
-                    "   [P] Potion   [S] Save   [D] Dark Mode   [Q] Quit[/]",
+                    "^A Attack  ^F Combat  ^E Inventory  ^P Potion"
+                    "  ^S Save  ^L Load  ^D Dark  ^Q Quit",
                     id="key-hints-bar",
-                    markup=True,
                 )
-    async def on_mount(self) -> None:
+    def on_mount(self) -> None:
+        self.run_worker(self._init_game(), exclusive=True, name="init")
+
+    async def _init_game(self) -> None:
+        from ui.intro_screen import IntroScreen
+        result = await self.push_screen_wait(IntroScreen())
+        log = self.query_one("#game-log", RichLog)
+        if result == "load":
+            try:
+                self.engine.load_game()
+                self.update_ui()
+                self.query_one("#player-input").focus()
+                log.write("[bold green]SYSTEM: Chronicle restored from disk.[/]")
+                return
+            except IncompatibleSaveError as e:
+                log.write(f"[bold red]SYSTEM: {e} — starting new chronicle.[/]")
+            except Exception as e:
+                log.write(f"[bold red]SYSTEM: Load failed: {e} — starting new chronicle.[/]")
         self.engine.initialize_campaign()
         self.update_ui()
         self.query_one("#player-input").focus()
@@ -254,7 +269,7 @@ class ChronosApp(App):
         # Auto-open the dedicated combat UI when a new combat starts
         if not prior_in_combat and state.in_combat and state.active_enemies:
             log_widget.write(
-                "[bold red]⚔ Combat started! Press [C] to open the combat panel.[/]"
+                "[bold red]⚔ Combat started! Press Ctrl+F to open the combat panel.[/]"
             )
             from ui.combat_screen import CombatScreen
             self.push_screen(CombatScreen(self.engine, self.update_ui))
@@ -365,15 +380,6 @@ class ChronosApp(App):
 
     def action_open_inventory(self) -> None:
         if self._is_dead():
-            return
-        # Because 'i' has priority=True it fires even when Input is focused.
-        # If the player is mid-sentence, insert the character rather than
-        # opening the overlay so normal typing still works.
-        inp = self.query_one("#player-input", Input)
-        if inp.has_focus and inp.value:
-            cursor = inp.cursor_position
-            inp.value = inp.value[:cursor] + "i" + inp.value[cursor:]
-            inp.cursor_position = cursor + 1
             return
         from ui.inventory_modal import InventoryModal
         self.push_screen(InventoryModal(self.engine, self.update_ui))
