@@ -77,6 +77,7 @@ class ChronosApp(App):
         border-right: tall $accent;
         padding: 1 1;
         overflow-x: hidden;
+        scrollbar-gutter: stable;
     }
 
     #content-area { width: 1fr; layout: vertical; }
@@ -85,8 +86,8 @@ class ChronosApp(App):
         height: 1fr;
         border: double $primary;
         background: #000000;
-        margin: 1;
         padding: 1;
+        scrollbar-gutter: stable;
     }
 
     #input-container { height: 3; margin: 0 1 0 1; }
@@ -636,8 +637,8 @@ def _render_state_changes(log_widget: RichLog, records: List[tuple]) -> None:
         icon, style, label = tier
         payload = _strip_op_prefix(desc, op)
         log_widget.write(f"[{style}]{icon} {label}: {payload}[/]")
-    if minor:
-        log_widget.write(f"[dim cyan]· {' | '.join(minor)}[/]")
+    for item in minor:
+        log_widget.write(f"[dim cyan]· {item}[/]")
 
 
 # ── Inventory rendering ───────────────────────────────────────────────────
