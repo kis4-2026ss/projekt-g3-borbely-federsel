@@ -3,7 +3,8 @@ from typing import Dict, List
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, VerticalScroll
 from textual.reactive import reactive
-from textual.widgets import Footer, Header, Input, Label, RichLog, Static
+from textual.binding import Binding
+from textual.widgets import Header, Input, Label, RichLog, Static
 
 from ai.client import AIClient
 from ai.orchestrator import PromptOrchestrator
@@ -71,10 +72,11 @@ class ChronosApp(App):
     #main-layout { layout: horizontal; height: 1fr; }
 
     #sidebar {
-        width: 42;
+        width: 46;
         background: #1e1e1e;
         border-right: tall $accent;
-        padding: 1 2;
+        padding: 1 1;
+        overflow-x: hidden;
     }
 
     #content-area { width: 1fr; layout: vertical; }
@@ -87,7 +89,14 @@ class ChronosApp(App):
         padding: 1;
     }
 
-    #input-container { height: 3; margin: 0 1 1 1; }
+    #input-container { height: 3; margin: 0 1 0 1; }
+
+    #key-hints-bar {
+        height: 1;
+        text-align: center;
+        color: $text-muted;
+        margin: 0 1 1 1;
+    }
 
     Input { border: none; background: #2a2a2a; }
 
@@ -103,12 +112,16 @@ class ChronosApp(App):
     """
 
     BINDINGS = [
-        ("q", "quit", "Quit"),
-        ("d", "toggle_dark", "Toggle Dark"),
-        ("s", "save_game", "Save"),
-        ("p", "use_potion", "Potion"),
-        ("a", "quick_attack", "Attack"),
-        ("ctrl+i", "open_inventory", "Inventory"),
+        ("q", "quit", "[Q] Quit"),
+        ("d", "toggle_dark", "[D] Toggle Dark"),
+        ("s", "save_game", "[S] Save"),
+        ("p", "use_potion", "[P] Potion"),
+        ("a", "quick_attack", "[A] Attack"),
+        # priority=True so the App intercepts 'i' before Input swallows it.
+        # action_open_inventory inserts the character when the user is typing.
+        Binding("i", "open_inventory", "[I] Inventory", priority=True),
+        # 'c' opens the combat screen when in combat
+        Binding("c", "open_combat", "[C] Combat", priority=True),
     ]
 
     def __init__(self, **kwargs):
@@ -136,8 +149,12 @@ class ChronosApp(App):
                         placeholder="What do you do? (e.g., 'examine the gears')",
                         id="player-input",
                     )
-        yield Footer()
-
+                yield Static(
+                    "[dim][A] Attack   [C] Combat   [I] Inventory"
+                    "   [P] Potion   [S] Save   [D] Dark Mode   [Q] Quit[/]",
+                    id="key-hints-bar",
+                    markup=True,
+                )
     async def on_mount(self) -> None:
         self.engine.initialize_campaign()
         self.update_ui()
@@ -147,6 +164,8 @@ class ChronosApp(App):
     # ── Input loop ────────────────────────────────────────────────────────
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
+        if self.engine.state.player.hp <= 0:
+            return  # dead — input is disabled but guard here too
         command = event.value.strip()
         if not command:
             return
@@ -171,6 +190,7 @@ class ChronosApp(App):
         log_widget.write("[italic dim]The air shimmers as the narrator speaks...[/]")
 
         prior_location = state.current_location
+        prior_in_combat = state.in_combat
         prior_quest_status: Dict[str, str] = {
             qid: q.status for qid, q in state.quests.items()
         }
@@ -225,6 +245,19 @@ class ChronosApp(App):
 
         if parsed.parse_warnings:
             log_widget.write(f"[dim yellow]⚠ {'; '.join(parsed.parse_warnings)}[/]")
+
+        # Player death — lock everything down before proceeding
+        if state.player.hp <= 0:
+            self._handle_player_death()
+            return
+
+        # Auto-open the dedicated combat UI when a new combat starts
+        if not prior_in_combat and state.in_combat and state.active_enemies:
+            log_widget.write(
+                "[bold red]⚔ Combat started! Press [C] to open the combat panel.[/]"
+            )
+            from ui.combat_screen import CombatScreen
+            self.push_screen(CombatScreen(self.engine, self.update_ui))
 
         if self._should_refresh_summary():
             self.run_worker(
@@ -283,11 +316,33 @@ class ChronosApp(App):
 
     # ── Actions ───────────────────────────────────────────────────────────
 
+    def _is_dead(self) -> bool:
+        return self.engine.state.player.hp <= 0
+
+    def _handle_player_death(self) -> None:
+        """Lock the UI on player death. Only Q (quit) remains active."""
+        if self.engine.state.player.hp > 0:
+            return
+        inp = self.query_one("#player-input", Input)
+        inp.disabled = True
+        inp.placeholder = "You are dead. Press Q to quit."
+        log = self.query_one("#game-log", RichLog)
+        log.write("")
+        log.write("[bold red]" + "─" * 52 + "[/]")
+        log.write("[bold red]        YOUR CHRONICLE ENDS HERE        [/]")
+        log.write("[bold red]    The ruins of Elowen claim another.   [/]")
+        log.write("[bold red]" + "─" * 52 + "[/]")
+        log.write("[dim]Press [bold]Q[/bold] to quit.[/]")
+
     def action_use_potion(self) -> None:
+        if self._is_dead():
+            return
         self.engine.use_potion()
         self.update_ui()
 
     def action_save_game(self) -> None:
+        if self._is_dead():
+            return
         log = self.query_one("#game-log", RichLog)
         try:
             self.engine.save_game()
@@ -309,13 +364,32 @@ class ChronosApp(App):
             log.write(f"[bold red]SYSTEM: Load failed: {e}[/]")
 
     def action_open_inventory(self) -> None:
-        # Lazy import avoids a module-load circular dependency with ui.inventory_modal,
-        # which imports _render_inventory_item from this module.
+        if self._is_dead():
+            return
+        # Because 'i' has priority=True it fires even when Input is focused.
+        # If the player is mid-sentence, insert the character rather than
+        # opening the overlay so normal typing still works.
+        inp = self.query_one("#player-input", Input)
+        if inp.has_focus and inp.value:
+            cursor = inp.cursor_position
+            inp.value = inp.value[:cursor] + "i" + inp.value[cursor:]
+            inp.cursor_position = cursor + 1
+            return
         from ui.inventory_modal import InventoryModal
         self.push_screen(InventoryModal(self.engine, self.update_ui))
 
+    def action_open_combat(self) -> None:
+        if self._is_dead():
+            return
+        if not self.engine.state.in_combat or not self.engine.state.active_enemies:
+            return
+        from ui.combat_screen import CombatScreen
+        self.push_screen(CombatScreen(self.engine, self.update_ui))
+
     async def action_quick_attack(self) -> None:
         """Press 'a' during combat to immediately send an attack command."""
+        if self._is_dead():
+            return
         state = self.engine.state
         if not state.in_combat or not state.active_enemies:
             return
@@ -367,7 +441,8 @@ class ChronosApp(App):
             equip_lines.append("⚔ [dim](no weapon)[/]")
         if p.equipped_armor:
             a = p.equipped_armor
-            equip_lines.append(f"🛡 [bold]{a.name}[/]  [AC +{a.ac_bonus}]")
+            dr_str = f"  DR {a.damage_reduction}" if a.damage_reduction > 0 else ""
+            equip_lines.append(f"🛡 [bold]{a.name}[/]  [AC +{a.ac_bonus}{dr_str}]")
         else:
             equip_lines.append("🛡 [dim](no armor)[/]")
         if p.status_effects:
@@ -444,7 +519,7 @@ def _enemy_hp_bar(enemy: Enemy) -> str:
     empty = 14 - filled
     color = "green" if ratio > 0.6 else "yellow" if ratio > 0.3 else "red"
     bar = _styled_segment("█" * filled, color) + _styled_segment("░" * empty, "dim")
-    return f"HP [{bar}] {enemy.hp}/{enemy.max_hp}"
+    return f"HP {bar} {enemy.hp}/{enemy.max_hp}"
 
 
 def _stat_block(player: Player) -> str:
@@ -582,5 +657,4 @@ def _render_inventory_item(state, item_name: str, is_equipped: bool = False) -> 
 
 
 if __name__ == "__main__":
-    app = ChronosApp()
-    app.run()
+    app = C

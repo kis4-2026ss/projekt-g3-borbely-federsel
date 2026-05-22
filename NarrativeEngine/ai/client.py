@@ -96,6 +96,8 @@ class AIClient:
                         return content.strip()
                 return "The ancient winds remain silent... (No response from AI)"
             except httpx.HTTPError as e:
-                return f"ARCANE ERROR: Connection lost in the mists. ({e})"
+                detail = str(e).strip() or type(e).__name__
+                return f"ARCANE ERROR: Connection lost in the mists. ({detail})"
             except Exception as e:
-                return f"ARCANE ERROR: {e}"
+                detail = str(e).strip() or type(e).__name__
+                return f"ARCANE ERROR: {detail}"

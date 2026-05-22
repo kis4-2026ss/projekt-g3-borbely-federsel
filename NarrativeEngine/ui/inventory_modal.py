@@ -8,20 +8,22 @@ from textual.widgets import Label, ListItem, ListView, Static
 
 
 class InventoryModal(ModalScreen[None]):
-    """Modal inventory panel. Opened via Ctrl+I from the main app.
+    """Modal inventory panel.  Open with [I] from the main screen.
 
-    Selecting an item and pressing E equips it (weapons/armor only).
-    Pressing D drops it from inventory; if the item was equipped, the
-    slot is also cleared. Escape closes the modal and triggers a parent
-    UI refresh so the sidebar reflects any changes."""
+    Key bindings:
+      E   — equip selected weapon / armor
+      U   — use selected consumable (heal potions etc.)
+      D   — drop item from inventory
+      Esc — close and refresh parent sidebar
+    """
 
     CSS = """
     InventoryModal {
         align: center middle;
     }
     #inventory-panel {
-        width: 70;
-        height: 26;
+        width: 72;
+        height: 30;
         background: #1e1e1e;
         border: thick $accent;
         padding: 1 2;
@@ -29,7 +31,7 @@ class InventoryModal(ModalScreen[None]):
     #equipped-header {
         height: auto;
         padding-bottom: 1;
-        border-bottom: dim $accent;
+        border-bottom: solid $accent;
     }
     #inventory-list {
         height: 1fr;
@@ -47,16 +49,18 @@ class InventoryModal(ModalScreen[None]):
     """
 
     BINDINGS = [
-        Binding("escape", "close", "Close", show=True),
-        Binding("e", "equip", "Equip", show=True),
-        Binding("d", "drop", "Drop", show=True),
+        Binding("escape", "close", "[Esc] Close", show=True),
+        Binding("e", "equip", "[E] Equip", show=True),
+        Binding("x", "unequip", "[X] Unequip", show=True),
+        Binding("u", "use_item", "[U] Use", show=True),
+        Binding("d", "drop", "[D] Drop", show=True),
     ]
 
     def __init__(self, engine, refresh_parent):
         super().__init__()
         self.engine = engine
         self.refresh_parent = refresh_parent
-        # Names in the same order as ListView children, so the selected
+        # Names in the same order as ListView children so the selected
         # index always maps back to the right inventory entry.
         self._displayed_names: List[str] = []
 
@@ -66,7 +70,7 @@ class InventoryModal(ModalScreen[None]):
             yield ListView(*self._build_list_items(), id="inventory-list")
             yield Static("", id="status-line", markup=True)
             yield Static(
-                "[dim][E] Equip   [D] Drop   [Esc] Close[/]",
+                "[dim][E] Equip   [X] Unequip   [U] Use   [D] Drop   [Esc] Close[/]",
                 id="key-hints",
                 markup=True,
             )
@@ -79,12 +83,13 @@ class InventoryModal(ModalScreen[None]):
         if p.equipped_weapon:
             w = p.equipped_weapon
             bonus = f"+{w.hit_bonus}" if w.hit_bonus >= 0 else str(w.hit_bonus)
-            lines.append(f"  ⚔ {w.name}  [{w.damage_dice} {bonus}]")
+            lines.append(f"  ⚔ [bold]{w.name}[/]  [{w.damage_dice} {bonus}]")
         else:
             lines.append("  ⚔ [dim](no weapon)[/]")
         if p.equipped_armor:
             a = p.equipped_armor
-            lines.append(f"  🛡 {a.name}  [+{a.ac_bonus} AC]")
+            dr_str = f"  DR {a.damage_reduction}" if a.damage_reduction > 0 else ""
+            lines.append(f"  🛡 [bold]{a.name}[/]  [AC +{a.ac_bonus}{dr_str}]")
         else:
             lines.append("  🛡 [dim](no armor)[/]")
         return "\n".join(lines)
@@ -103,6 +108,13 @@ class InventoryModal(ModalScreen[None]):
             rendered = _render_inventory_item(
                 state, name, is_equipped=self.engine.is_equipped(name)
             )
+            # Append a heal hint for consumables
+            defn = next(
+                (it for it in state.item_registry.values() if it.name == name),
+                None,
+            )
+            if defn and defn.item_type == "consumable" and defn.heal_amount > 0:
+                rendered += f" [dim cyan](+{defn.heal_amount} HP)[/]"
             items.append(ListItem(Label(rendered, markup=True)))
             self._displayed_names.append(name)
         return items
@@ -142,6 +154,28 @@ class InventoryModal(ModalScreen[None]):
         if ok:
             self._refresh_list()
 
+    def action_unequip(self) -> None:
+        """Unequip the selected weapon or armor (keeps it in inventory)."""
+        name = self._selected_item_name()
+        if name is None:
+            self._set_status("No item selected.", success=False)
+            return
+        ok, msg = self.engine.unequip_item(name)
+        self._set_status(msg, success=ok)
+        if ok:
+            self._refresh_list()
+
+    def action_use_item(self) -> None:
+        """Use (consume) the selected item."""
+        name = self._selected_item_name()
+        if name is None:
+            self._set_status("No item selected.", success=False)
+            return
+        ok, msg = self.engine.use_consumable(name)
+        self._set_status(msg, success=ok)
+        if ok:
+            self._refresh_list()
+
     def action_drop(self) -> None:
         name = self._selected_item_name()
         if name is None:
@@ -154,4 +188,4 @@ class InventoryModal(ModalScreen[None]):
 
     def action_close(self) -> None:
         self.refresh_parent()
-        self.dismiss()
+ 

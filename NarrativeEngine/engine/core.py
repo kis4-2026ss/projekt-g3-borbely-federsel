@@ -1,3 +1,4 @@
+import random
 from typing import Optional, Tuple
 
 from .models import (
@@ -22,6 +23,7 @@ _STARTER_ITEMS = [
         item_type="armor",
         description="Scavenged leather scraps stitched into a serviceable jerkin.",
         ac_bonus=1,
+        damage_reduction=1,
         tags=["armor", "starter"],
     ),
     ItemDefinition(
@@ -43,21 +45,26 @@ _STARTER_ITEMS = [
 
 
 class GameEngine:
-    """Central coordinator for game logic. Holds the active GameState and
-    manages data-driven content loading."""
-
     def __init__(self, initial_state: Optional[GameState] = None):
         self.state = initial_state or self._create_default_state()
 
     def _create_default_state(self) -> GameState:
-        player = Player(name="Aurelian Exile", hp=30, max_hp=30)
-
+        stats = {
+            stat: random.randint(1, 10)
+            for stat in (
+                "strength", "dexterity", "intelligence",
+                "constitution", "wisdom", "charisma",
+            )
+        }
+        player = Player(name="Aurelian Exile", hp=30, max_hp=30, stats=stats)
         start_loc = Location(
             name="The Overgrown Outpost",
-            description="A cluster of simple stone huts huddled in the shadow of a massive, cracked crystal spire.",
+            description=(
+                "A cluster of simple stone huts huddled in the shadow of a"
+                " massive, cracked crystal spire."
+            ),
             connections=["The Shattered Plaza"],
         )
-
         return GameState(
             player=player,
             current_location=start_loc.name,
@@ -66,15 +73,11 @@ class GameEngine:
         )
 
     def initialize_campaign(self):
-        """Seed the initial world state and starting kit. Quests, encounters,
-        and additional items are created dynamically by the LLM via
-        define_quest, define_encounter, and define_item ops."""
         self.state.record_choice(
             event="Awakening in the ruins of Elowen",
             choice="Opened eyes in the Overgrown Outpost",
             tags=["bloodline", "awakening", "elowen", "spire"],
         )
-
         for item in _STARTER_ITEMS:
             self.state.item_registry[item.id] = item
             self.state.player.add_item(item.name)
@@ -92,10 +95,11 @@ class GameEngine:
         self.state.player.equipped_armor = Armor(
             name=armor.name,
             ac_bonus=armor.ac_bonus,
+            damage_reduction=armor.damage_reduction,
             description=armor.description,
         )
 
-    # ── Inventory actions (called directly by the UI, not via LLM ops) ───
+    # ── Inventory helpers ─────────────────────────────────────────────────
 
     def _lookup_item(self, name: str) -> Optional[ItemDefinition]:
         return next(
@@ -104,7 +108,6 @@ class GameEngine:
         )
 
     def equip_item_from_inventory(self, item_name: str) -> Tuple[bool, str]:
-        """Equip an item from inventory by name. Returns (success, message)."""
         if item_name not in self.state.player.inventory:
             return False, f"{item_name} is not in your inventory."
         item = self._lookup_item(item_name)
@@ -123,14 +126,13 @@ class GameEngine:
             self.state.player.equipped_armor = Armor(
                 name=item.name,
                 ac_bonus=item.ac_bonus,
+                damage_reduction=item.damage_reduction,
                 description=item.description,
             )
             return True, f"Equipped {item.name}."
         return False, f"{item.item_type.capitalize()} items cannot be equipped."
 
     def drop_item(self, item_name: str) -> Tuple[bool, str]:
-        """Drop an item from inventory. If it is currently equipped, the slot is
-        also cleared. Returns (success, message)."""
         if item_name not in self.state.player.inventory:
             return False, f"{item_name} is not in your inventory."
         self.state.player.remove_item(item_name)
@@ -150,24 +152,54 @@ class GameEngine:
         return True, f"Dropped {item_name}{cleared_slot}."
 
     def is_equipped(self, item_name: str) -> bool:
-        if self.state.player.equipped_weapon and self.state.player.equipped_weapon.name == item_name:
+        if (
+            self.state.player.equipped_weapon
+            and self.state.player.equipped_weapon.name == item_name
+        ):
             return True
-        if self.state.player.equipped_armor and self.state.player.equipped_armor.name == item_name:
+        if (
+            self.state.player.equipped_armor
+            and self.state.player.equipped_armor.name == item_name
+        ):
             return True
         return False
+
+    def unequip_item(self, item_name: str) -> Tuple[bool, str]:
+        """Unequip a weapon or armor without removing it from inventory."""
+        player = self.state.player
+        if player.equipped_weapon and player.equipped_weapon.name == item_name:
+            player.equipped_weapon = None
+            return True, f"Unequipped {item_name}."
+        if player.equipped_armor and player.equipped_armor.name == item_name:
+            player.equipped_armor = None
+            return True, f"Unequipped {item_name}."
+        return False, f"{item_name} is not currently equipped."
+
+    def use_consumable(self, item_name: str) -> Tuple[bool, str]:
+        """Use a consumable. Returns (success, message)."""
+        if item_name not in self.state.player.inventory:
+            return False, f"{item_name} is not in your inventory."
+        item = self._lookup_item(item_name)
+        if item is None or item.item_type != "consumable":
+            return False, f"{item_name} cannot be used."
+        if item.heal_amount > 0:
+            self.state.player.remove_item(item_name)
+            self.state.player.heal(item.heal_amount)
+            self.state.add_log(
+                f"Used {item_name}: restored {item.heal_amount} HP"
+                f" ({self.state.player.hp}/{self.state.player.max_hp})."
+            )
+            return True, f"Restored {item.heal_amount} HP."
+        return False, f"{item_name} has no use effect defined."
 
     def save_game(self):
         self.state.save_to_file()
 
     def load_game(self):
-        """Replace the active state with the contents of savegame.json.
-        Raises models.IncompatibleSaveError if the save schema is out of date."""
         self.state = GameState.load_from_file()
 
     def use_potion(self):
-        if "Health Potion" in self.state.player.inventory:
-            self.state.player.remove_item("Health Potion")
-            self.state.player.heal(15)
-            self.state.add_log("You consume a vial of glowing blue liquid. The mana soothes your aching bones.")
-        else:
+        """Legacy shortcut — use the first Health Potion in inventory."""
+        ok, msg = self.use_consumable("Health Potion")
+        if not ok:
             self.state.add_log("You reach for a potion, but find only empty glass.")

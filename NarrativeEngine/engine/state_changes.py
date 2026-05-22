@@ -112,13 +112,16 @@ def _equip_armor(state: GameState, change: Dict[str, Any]) -> str:
     if not isinstance(name, str) or not name.strip():
         raise ValueError("'name' must be a non-empty string")
     ac_bonus = _coerce_int(change.get("ac_bonus", 0), field="ac_bonus")
+    damage_reduction = _coerce_int(change.get("damage_reduction", 0), field="damage_reduction")
     description = change.get("description", "")
     state.player.equipped_armor = Armor(
         name=name.strip(),
         ac_bonus=ac_bonus,
+        damage_reduction=max(0, damage_reduction),
         description=description if isinstance(description, str) else "",
     )
-    return f"equipped armor: {name.strip()} (+{ac_bonus} AC)"
+    dr_note = f"  DR {damage_reduction}" if damage_reduction > 0 else ""
+    return f"equipped armor: {name.strip()} (+{ac_bonus} AC{dr_note})"
 
 
 def _unequip_weapon(state: GameState, change: Dict[str, Any]) -> str:
@@ -415,11 +418,9 @@ def _loot_encounter(state: GameState, change: Dict[str, Any]) -> str:
     if template is None:
         raise ValueError(f"No encounter defined with id '{enc_id}'")
 
+    # XP is auto-awarded by CombatManager.resolve_full_round when the enemy dies.
+    # loot_encounter handles gold and items only.
     parts: List[str] = []
-    if template.xp_reward > 0:
-        desc = _award_xp(state, {"op": "award_xp", "amount": template.xp_reward})
-        if desc:
-            parts.append(desc)
     if template.gold_reward > 0:
         state.player.gold += template.gold_reward
         parts.append(f"+{template.gold_reward} gold")
@@ -462,6 +463,7 @@ def _define_item(state: GameState, change: Dict[str, Any]) -> str:
         hit_bonus=_coerce_int(change.get("hit_bonus", 0), field="hit_bonus"),
         damage_type=change.get("damage_type", "slashing") if isinstance(change.get("damage_type"), str) else "slashing",
         ac_bonus=_coerce_int(change.get("ac_bonus", 0), field="ac_bonus"),
+        damage_reduction=max(0, _coerce_int(change.get("damage_reduction", 0), field="damage_reduction")),
         heal_amount=max(0, _coerce_int(change.get("heal_amount", 0), field="heal_amount")),
         tags=[t for t in (change.get("tags") or []) if isinstance(t, str)],
     )
@@ -493,6 +495,7 @@ def _give_defined_item(state: GameState, change: Dict[str, Any]) -> str:
         state.player.equipped_armor = Armor(
             name=item.name,
             ac_bonus=item.ac_bonus,
+            damage_reduction=item.damage_reduction,
             description=item.description,
         )
         extra = " (equipped)"
@@ -749,7 +752,7 @@ INVENTORY / HEALTH
 
 EQUIPMENT
 - {"op":"equip_weapon","name":"<name>","damage_dice":"1d8","hit_bonus":<int>,"damage_type":"slashing|piercing|bludgeoning"}
-- {"op":"equip_armor","name":"<name>","ac_bonus":<int>}
+- {"op":"equip_armor","name":"<name>","ac_bonus":<int>,"damage_reduction":<int>}  # damage_reduction subtracts flat dmg per hit
 - {"op":"unequip_weapon"}
 - {"op":"unequip_armor"}
 
@@ -767,11 +770,12 @@ STATS (score 1–30)
 
 ENCOUNTER REGISTRY (preferred for named enemies — see ENCOUNTER & ITEM RULES)
 - {"op":"define_encounter","id":"<slug>","name":"<name>","description":"<approach text>","enemy_name":"<name>","enemy_hp":<int>,"enemy_ac":<int>,"enemy_attack_bonus":<int>,"enemy_damage_dice":"1d6","enemy_level":<int>,"xp_reward":<int>,"gold_reward":<int>,"item_rewards":["<name>"],"narrative_flavor":"<combat prose guidance>","defeat_condition":"defeat|soothe|outwit|endure","quest_id":"<id>|null","tags":["<keyword>"],"is_boss":<bool>}
+  NOTE: xp_reward in encounter templates is unused — XP is auto-awarded by the combat system (25 + level*25) when an enemy dies. Use gold_reward and item_rewards for loot_encounter.
 - {"op":"spawn_encounter","id":"<slug>"}
 - {"op":"loot_encounter","id":"<slug>"}
 
 ITEM REGISTRY (for weapons, armor, and quest items with mechanical properties)
-- {"op":"define_item","id":"<slug>","name":"<name>","item_type":"weapon|armor|consumable|quest|lore","description":"<text>","value_gold":<int>,"damage_dice":"1d8","hit_bonus":<int>,"damage_type":"slashing|piercing|bludgeoning","ac_bonus":<int>,"heal_amount":<int>,"tags":["<keyword>"]}
+- {"op":"define_item","id":"<slug>","name":"<name>","item_type":"weapon|armor|consumable|quest|lore","description":"<text>","value_gold":<int>,"damage_dice":"1d8","hit_bonus":<int>,"damage_type":"slashing|piercing|bludgeoning","ac_bonus":<int>,"damage_reduction":<int>,"heal_amount":<int>,"tags":["<keyword>"]}
 - {"op":"give_defined_item","id":"<slug>"}
 
 COMBAT (use start_combat for ad-hoc/unnamed enemies; use spawn_encounter for defined templates)

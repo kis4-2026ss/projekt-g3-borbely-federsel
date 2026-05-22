@@ -36,6 +36,7 @@ class Weapon:
 class Armor:
     name: str
     ac_bonus: int
+    damage_reduction: int = 0   # flat DR: subtracted from every incoming hit
     description: str = ""
 
 
@@ -70,6 +71,7 @@ class ItemDefinition:
     hit_bonus: int = 0                # weapon only
     damage_type: str = "slashing"     # weapon only
     ac_bonus: int = 0                 # armor only
+    damage_reduction: int = 0         # armor only — flat DR per hit
     heal_amount: int = 0              # consumable only
     tags: List[str] = field(default_factory=list)
 
