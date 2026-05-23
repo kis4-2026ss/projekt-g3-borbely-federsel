@@ -112,16 +112,13 @@ def _equip_armor(state: GameState, change: Dict[str, Any]) -> str:
     if not isinstance(name, str) or not name.strip():
         raise ValueError("'name' must be a non-empty string")
     ac_bonus = _coerce_int(change.get("ac_bonus", 0), field="ac_bonus")
-    damage_reduction = _coerce_int(change.get("damage_reduction", 0), field="damage_reduction")
     description = change.get("description", "")
     state.player.equipped_armor = Armor(
         name=name.strip(),
         ac_bonus=ac_bonus,
-        damage_reduction=max(0, damage_reduction),
         description=description if isinstance(description, str) else "",
     )
-    dr_note = f"  DR {damage_reduction}" if damage_reduction > 0 else ""
-    return f"equipped armor: {name.strip()} (+{ac_bonus} AC{dr_note})"
+    return f"equipped armor: {name.strip()} (+{ac_bonus} AC)"
 
 
 def _unequip_weapon(state: GameState, change: Dict[str, Any]) -> str:
@@ -185,6 +182,8 @@ def _apply_status(state: GameState, change: Dict[str, Any]) -> str:
         raise ValueError("'name' must be a non-empty string")
     duration = _coerce_int(change.get("duration_turns", 3), field="duration_turns")
     roll_modifier = _coerce_int(change.get("roll_modifier", 0), field="roll_modifier")
+    advantage = _coerce_int(change.get("advantage", 0), field="advantage")
+    advantage = max(-1, min(1, advantage))
     description = change.get("description", "")
     # Replace any existing effect with the same name
     state.player.status_effects = [
@@ -194,6 +193,7 @@ def _apply_status(state: GameState, change: Dict[str, Any]) -> str:
         name=name.strip(),
         duration_turns=max(1, duration),
         roll_modifier=roll_modifier,
+        advantage=advantage,
         description=description if isinstance(description, str) else "",
     ))
     return f"status applied: {name.strip()} ({duration} turns)"
@@ -241,6 +241,7 @@ def _start_combat(state: GameState, change: Dict[str, Any]) -> str:
     hp = max(1, _coerce_int(change.get("enemy_hp", 10), field="enemy_hp"))
     ac = max(1, _coerce_int(change.get("enemy_ac", 10), field="enemy_ac"))
     attack_bonus = _coerce_int(change.get("enemy_attack_bonus", 0), field="enemy_attack_bonus")
+    damage_bonus = _coerce_int(change.get("enemy_damage_bonus", 0), field="enemy_damage_bonus")
     damage_dice = change.get("enemy_damage_dice", "1d6")
     level = max(1, _coerce_int(change.get("enemy_level", 1), field="enemy_level"))
 
@@ -251,6 +252,7 @@ def _start_combat(state: GameState, change: Dict[str, Any]) -> str:
         ac=ac,
         attack_bonus=attack_bonus,
         damage_dice=damage_dice if isinstance(damage_dice, str) else "1d6",
+        damage_bonus=damage_bonus,
         level=level,
     )
     state.active_enemies.append(enemy)
@@ -344,6 +346,7 @@ def _define_encounter(state: GameState, change: Dict[str, Any]) -> str:
     enemy_hp = max(1, _coerce_int(change.get("enemy_hp", 10), field="enemy_hp"))
     enemy_ac = max(1, _coerce_int(change.get("enemy_ac", 10), field="enemy_ac"))
     enemy_atk = _coerce_int(change.get("enemy_attack_bonus", 0), field="enemy_attack_bonus")
+    enemy_dmg_bonus = _coerce_int(change.get("enemy_damage_bonus", 0), field="enemy_damage_bonus")
     enemy_dmg = change.get("enemy_damage_dice", "1d6")
     enemy_lvl = max(1, _coerce_int(change.get("enemy_level", 1), field="enemy_level"))
 
@@ -354,6 +357,7 @@ def _define_encounter(state: GameState, change: Dict[str, Any]) -> str:
         ac=enemy_ac,
         attack_bonus=enemy_atk,
         damage_dice=enemy_dmg if isinstance(enemy_dmg, str) else "1d6",
+        damage_bonus=enemy_dmg_bonus,
         level=enemy_lvl,
     )
     template = EncounterTemplate(
@@ -392,6 +396,7 @@ def _spawn_encounter(state: GameState, change: Dict[str, Any]) -> str:
         ac=src.ac,
         attack_bonus=src.attack_bonus,
         damage_dice=src.damage_dice,
+        damage_bonus=src.damage_bonus,
         level=src.level,
     )
     state.active_enemies.append(enemy)
@@ -463,7 +468,6 @@ def _define_item(state: GameState, change: Dict[str, Any]) -> str:
         hit_bonus=_coerce_int(change.get("hit_bonus", 0), field="hit_bonus"),
         damage_type=change.get("damage_type", "slashing") if isinstance(change.get("damage_type"), str) else "slashing",
         ac_bonus=_coerce_int(change.get("ac_bonus", 0), field="ac_bonus"),
-        damage_reduction=max(0, _coerce_int(change.get("damage_reduction", 0), field="damage_reduction")),
         heal_amount=max(0, _coerce_int(change.get("heal_amount", 0), field="heal_amount")),
         tags=[t for t in (change.get("tags") or []) if isinstance(t, str)],
     )
@@ -495,7 +499,6 @@ def _give_defined_item(state: GameState, change: Dict[str, Any]) -> str:
         state.player.equipped_armor = Armor(
             name=item.name,
             ac_bonus=item.ac_bonus,
-            damage_reduction=item.damage_reduction,
             description=item.description,
         )
         extra = " (equipped)"
@@ -752,7 +755,7 @@ INVENTORY / HEALTH
 
 EQUIPMENT
 - {"op":"equip_weapon","name":"<name>","damage_dice":"1d8","hit_bonus":<int>,"damage_type":"slashing|piercing|bludgeoning"}
-- {"op":"equip_armor","name":"<name>","ac_bonus":<int>,"damage_reduction":<int>}  # damage_reduction subtracts flat dmg per hit
+- {"op":"equip_armor","name":"<name>","ac_bonus":<int>}  # armor only raises AC (D&D 5e — no flat damage reduction)
 - {"op":"unequip_weapon"}
 - {"op":"unequip_armor"}
 
@@ -762,24 +765,24 @@ PROGRESSION
 - {"op":"remove_gold","amount":<int>}
 
 STATUS EFFECTS
-- {"op":"apply_status","name":"<name>","duration_turns":<int>,"roll_modifier":<int>}
+- {"op":"apply_status","name":"<name>","duration_turns":<int>,"roll_modifier":<int>,"advantage":<-1|0|1>}  # advantage: +1 grants advantage on the player's d20 rolls, -1 imposes disadvantage
 - {"op":"remove_status","name":"<name>"}
 
 STATS (score 1–30)
 - {"op":"set_stat","stat":"strength|dexterity|intelligence|constitution|wisdom|charisma","value":<int>}
 
 ENCOUNTER REGISTRY (preferred for named enemies — see ENCOUNTER & ITEM RULES)
-- {"op":"define_encounter","id":"<slug>","name":"<name>","description":"<approach text>","enemy_name":"<name>","enemy_hp":<int>,"enemy_ac":<int>,"enemy_attack_bonus":<int>,"enemy_damage_dice":"1d6","enemy_level":<int>,"xp_reward":<int>,"gold_reward":<int>,"item_rewards":["<name>"],"narrative_flavor":"<combat prose guidance>","defeat_condition":"defeat|soothe|outwit|endure","quest_id":"<id>|null","tags":["<keyword>"],"is_boss":<bool>}
+- {"op":"define_encounter","id":"<slug>","name":"<name>","description":"<approach text>","enemy_name":"<name>","enemy_hp":<int>,"enemy_ac":<int>,"enemy_attack_bonus":<int>,"enemy_damage_dice":"1d6","enemy_damage_bonus":<int>,"enemy_level":<int>,"xp_reward":<int>,"gold_reward":<int>,"item_rewards":["<name>"],"narrative_flavor":"<combat prose guidance>","defeat_condition":"defeat|soothe|outwit|endure","quest_id":"<id>|null","tags":["<keyword>"],"is_boss":<bool>}
   NOTE: xp_reward in encounter templates is unused — XP is auto-awarded by the combat system (25 + level*25) when an enemy dies. Use gold_reward and item_rewards for loot_encounter.
 - {"op":"spawn_encounter","id":"<slug>"}
 - {"op":"loot_encounter","id":"<slug>"}
 
 ITEM REGISTRY (for weapons, armor, and quest items with mechanical properties)
-- {"op":"define_item","id":"<slug>","name":"<name>","item_type":"weapon|armor|consumable|quest|lore","description":"<text>","value_gold":<int>,"damage_dice":"1d8","hit_bonus":<int>,"damage_type":"slashing|piercing|bludgeoning","ac_bonus":<int>,"damage_reduction":<int>,"heal_amount":<int>,"tags":["<keyword>"]}
+- {"op":"define_item","id":"<slug>","name":"<name>","item_type":"weapon|armor|consumable|quest|lore","description":"<text>","value_gold":<int>,"damage_dice":"1d8","hit_bonus":<int>,"damage_type":"slashing|piercing|bludgeoning","ac_bonus":<int>,"heal_amount":<int>,"tags":["<keyword>"]}
 - {"op":"give_defined_item","id":"<slug>"}
 
 COMBAT (use start_combat for ad-hoc/unnamed enemies; use spawn_encounter for defined templates)
-- {"op":"start_combat","enemy_name":"<name>","enemy_hp":<int>,"enemy_ac":<int>,"enemy_attack_bonus":<int>,"enemy_damage_dice":"1d6","enemy_level":<int>}
+- {"op":"start_combat","enemy_name":"<name>","enemy_hp":<int>,"enemy_ac":<int>,"enemy_attack_bonus":<int>,"enemy_damage_dice":"1d6","enemy_damage_bonus":<int>,"enemy_level":<int>}
 - {"op":"roll_attack","target":"<enemy name>"}
 - {"op":"end_combat","outcome":"victory|fled|defeat"}
 - {"op":"roll_skill_check","stat":"strength|dexterity|...","dc":<int>,"label":"<description>"}

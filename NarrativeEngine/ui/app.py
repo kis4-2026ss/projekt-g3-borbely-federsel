@@ -451,8 +451,7 @@ class ChronosApp(App):
             equip_lines.append("⚔ [dim](no weapon)[/]")
         if p.equipped_armor:
             a = p.equipped_armor
-            dr_str = f"  DR {a.damage_reduction}" if a.damage_reduction > 0 else ""
-            equip_lines.append(f"🛡 [bold]{a.name}[/]  [AC +{a.ac_bonus}{dr_str}]")
+            equip_lines.append(f"🛡 [bold]{a.name}[/]  [AC +{a.ac_bonus}]")
         else:
             equip_lines.append("🛡 [dim](no armor)[/]")
         if p.status_effects:
@@ -462,6 +461,11 @@ class ChronosApp(App):
                 mod_str = ""
                 if eff.roll_modifier != 0:
                     mod_str = f" {'+' if eff.roll_modifier >= 0 else ''}{eff.roll_modifier}"
+                adv = getattr(eff, "advantage", 0)
+                if adv > 0:
+                    mod_str += " [green]adv[/]"
+                elif adv < 0:
+                    mod_str += " [red]dis[/]"
                 color = "red" if eff.roll_modifier < 0 else "green" if eff.roll_modifier > 0 else "yellow"
                 equip_lines.append(f"[{color}]{eff.name}[/]{mod_str} ({eff.duration_turns}t)")
         self.query_one("#equipment-display", StatDisplay).renderable = "\n".join(equip_lines)
@@ -555,6 +559,10 @@ def _format_dice_roll(roll: DiceRoll) -> str:
     rolls_str = "+".join(str(r) for r in roll.rolls)
     if len(roll.rolls) > 1:
         rolls_str = f"({rolls_str})"
+    if getattr(roll, "advantage", 0):
+        adv_tag = "advantage" if roll.advantage > 0 else "disadvantage"
+        dropped = "/".join(str(d) for d in getattr(roll, "dropped", []))
+        rolls_str += f" [dim]({adv_tag}, dropped {dropped})[/]"
 
     mod_part = ""
     if roll.modifier > 0:
@@ -578,7 +586,14 @@ def _format_dice_roll(roll: DiceRoll) -> str:
     ]
     if roll.dc is not None:
         if roll.roll_type == "attack":
-            outcome = "[bold green]HIT[/]" if roll.success else "[bold red]MISS[/]"
+            if getattr(roll, "is_critical", False):
+                outcome = "[bold green]CRITICAL HIT![/]"
+            elif getattr(roll, "is_fumble", False):
+                outcome = "[bold red]MISS (natural 1!)[/]"
+            elif roll.success:
+                outcome = "[bold green]HIT[/]"
+            else:
+                outcome = "[bold red]MISS[/]"
             lines.append(f"  vs AC {roll.dc} → {outcome}")
         else:
             outcome = "[bold green]✓ SUCCESS[/]" if roll.success else "[bold red]✗ FAILURE[/]"
