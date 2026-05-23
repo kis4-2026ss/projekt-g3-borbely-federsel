@@ -80,10 +80,10 @@ class CombatScreen(ModalScreen[None]):
     """
 
     BINDINGS = [
-        Binding("a", "attack", "[A] Attack", priority=True),
-        Binding("u", "use_item", "[U] Use Item", priority=True),
-        Binding("f", "flee", "[F] Flee", priority=True),
-        Binding("escape", "dismiss_combat", "[Esc] Close", show=True),
+        Binding("ctrl+a", "attack", "^A Attack", priority=True),
+        Binding("ctrl+u", "use_item", "^U Use Item", priority=True),
+        Binding("ctrl+f", "flee", "^F Flee", priority=True),
+        Binding("escape", "dismiss_combat", "Esc Close", show=True),
     ]
 
     def __init__(self, engine, refresh_parent):
@@ -101,7 +101,7 @@ class CombatScreen(ModalScreen[None]):
             yield RichLog(id="combat-log", wrap=True, markup=True)
             yield Static("", id="combat-status", markup=True)
             yield Static(
-                "[dim][A] Attack   [U] Use Item   [F] Flee   [Esc] Dismiss[/]",
+                "^A Attack  ^U Use Item  ^F Flee  Esc Close",
                 id="action-hints",
                 markup=True,
             )
@@ -340,4 +340,4 @@ def _format_roll_line(roll) -> str:
             outcome = " → [bold green]✓[/]" if roll.success else " → [bold red]✗[/]"
 
     mod_str = f" {mod_part}" if mod_part else ""
-    return f"  {icon} [bold yellow]{label}[/]: {rolls_str}{mod_str} = {
+    return f"  {icon} [bold yellow]{label}[/]: {rolls_str}{mod_str} = {result}{outcome}"
