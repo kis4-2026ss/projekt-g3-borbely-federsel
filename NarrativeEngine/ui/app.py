@@ -118,7 +118,7 @@ class ChronosApp(App):
         ("ctrl+d", "toggle_dark", "Dark"),
         ("ctrl+s", "save_game", "Save"),
         ("ctrl+l", "load_game", "Load"),
-        ("ctrl+p", "use_potion", "Potion"),
+        ("ctrl+u", "use_potion", "Use Item"),
         ("ctrl+a", "quick_attack", "Attack"),
         ("ctrl+e", "open_inventory", "Inventory"),
         ("ctrl+f", "open_combat", "Combat"),
@@ -150,7 +150,7 @@ class ChronosApp(App):
                         id="player-input",
                     )
                 yield Static(
-                    "^A Attack  ^F Combat  ^E Inventory  ^P Potion"
+                    "^A Attack  ^F Combat  ^E Inventory  ^U Use Item"
                     "  ^S Save  ^L Load  ^D Dark  ^Q Quit",
                     id="key-hints-bar",
                 )
@@ -388,9 +388,12 @@ class ChronosApp(App):
     def action_open_combat(self) -> None:
         if self._is_dead():
             return
+        from ui.combat_screen import CombatScreen
+        # Don't push a second CombatScreen if one is already active
+        if isinstance(self.screen, CombatScreen):
+            return
         if not self.engine.state.in_combat or not self.engine.state.active_enemies:
             return
-        from ui.combat_screen import CombatScreen
         self.push_screen(CombatScreen(self.engine, self.update_ui))
 
     async def action_quick_attack(self) -> None:
@@ -664,4 +667,5 @@ def _render_inventory_item(state, item_name: str, is_equipped: bool = False) -> 
 
 
 if __name__ == "__main__":
-    app = C
+    app = ChronosApp()
+    app.run()

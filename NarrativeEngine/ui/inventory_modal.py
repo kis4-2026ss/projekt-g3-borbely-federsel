@@ -56,11 +56,11 @@ class InventoryModal(ModalScreen[None]):
     """
 
     BINDINGS = [
-        Binding("escape", "close", "[Esc] Close", show=True),
-        Binding("e", "equip", "[E] Equip", show=True),
-        Binding("x", "unequip", "[X] Unequip", show=True),
-        Binding("u", "use_item", "[U] Use", show=True),
-        Binding("d", "drop", "[D] Drop", show=True),
+        Binding("escape", "close", "Esc Close", show=True),
+        Binding("ctrl+e", "equip", "^E Equip", show=True, priority=True),
+        Binding("ctrl+x", "unequip", "^X Unequip", show=True, priority=True),
+        Binding("ctrl+u", "use_item", "^U Use", show=True, priority=True),
+        Binding("ctrl+d", "drop", "^D Drop", show=True, priority=True),
     ]
 
     def __init__(self, engine, refresh_parent):
@@ -77,7 +77,7 @@ class InventoryModal(ModalScreen[None]):
             yield ListView(*self._build_list_items(), id="inventory-list")
             yield Static("", id="status-line", markup=True)
             yield Static(
-                "E Equip  X Unequip  U Use  D Drop  Esc Close",
+                "^E Equip  ^X Unequip  ^U Use  ^D Drop  Esc Close",
                 id="key-hints",
             )
 
