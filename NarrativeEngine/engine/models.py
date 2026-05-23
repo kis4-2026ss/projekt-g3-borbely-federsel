@@ -4,7 +4,7 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 
 class IncompatibleSaveError(Exception):
@@ -14,13 +14,18 @@ class IncompatibleSaveError(Exception):
 @dataclass
 class DiceRoll:
     dice: str                  # "1d20", "2d6"
-    rolls: List[int]           # individual die results
+    rolls: List[int]           # individual die results actually kept
     modifier: int              # total modifier added to sum
     total: int
     dc: Optional[int] = None   # difficulty class or AC target
     success: Optional[bool] = None
     label: str = ""
     roll_type: str = "check"   # "check" | "attack" | "damage" | "initiative"
+    natural: Optional[int] = None   # the raw d20 face value (single-d20 rolls only)
+    is_critical: bool = False       # natural 20 on an attack roll
+    is_fumble: bool = False         # natural 1 on an attack roll
+    advantage: int = 0              # -1 disadvantage | 0 normal | +1 advantage
+    dropped: List[int] = field(default_factory=list)  # dice discarded by (dis)advantage
 
 
 @dataclass
@@ -35,8 +40,7 @@ class Weapon:
 @dataclass
 class Armor:
     name: str
-    ac_bonus: int
-    damage_reduction: int = 0   # flat DR: subtracted from every incoming hit
+    ac_bonus: int               # D&D 5e: armor only raises AC, never reduces damage
     description: str = ""
 
 
@@ -44,7 +48,8 @@ class Armor:
 class StatusEffect:
     name: str
     duration_turns: int
-    roll_modifier: int = 0     # applied to all dice rolls while active
+    roll_modifier: int = 0     # flat bonus/penalty applied to the player's d20 rolls
+    advantage: int = 0         # -1 imposes disadvantage | 0 none | +1 grants advantage
     description: str = ""
 
 
@@ -56,6 +61,7 @@ class Enemy:
     ac: int
     attack_bonus: int = 0
     damage_dice: str = "1d6"
+    damage_bonus: int = 0      # ability modifier added to the enemy's damage rolls
     level: int = 1
 
 
@@ -70,8 +76,7 @@ class ItemDefinition:
     damage_dice: Optional[str] = None # weapon only — e.g. "1d8"
     hit_bonus: int = 0                # weapon only
     damage_type: str = "slashing"     # weapon only
-    ac_bonus: int = 0                 # armor only
-    damage_reduction: int = 0         # armor only — flat DR per hit
+    ac_bonus: int = 0                 # armor only — raises AC
     heal_amount: int = 0              # consumable only
     tags: List[str] = field(default_factory=list)
 

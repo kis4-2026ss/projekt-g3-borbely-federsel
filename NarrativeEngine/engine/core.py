@@ -23,7 +23,6 @@ _STARTER_ITEMS = [
         item_type="armor",
         description="Scavenged leather scraps stitched into a serviceable jerkin.",
         ac_bonus=1,
-        damage_reduction=1,
         tags=["armor", "starter"],
     ),
     ItemDefinition(
@@ -95,7 +94,6 @@ class GameEngine:
         self.state.player.equipped_armor = Armor(
             name=armor.name,
             ac_bonus=armor.ac_bonus,
-            damage_reduction=armor.damage_reduction,
             description=armor.description,
         )
 
@@ -126,7 +124,6 @@ class GameEngine:
             self.state.player.equipped_armor = Armor(
                 name=item.name,
                 ac_bonus=item.ac_bonus,
-                damage_reduction=item.damage_reduction,
                 description=item.description,
             )
             return True, f"Equipped {item.name}."

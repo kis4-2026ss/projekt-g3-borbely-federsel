@@ -137,9 +137,7 @@ class CombatScreen(ModalScreen[None]):
             if p.equipped_weapon else "(no weapon)"
         )
         armor_str = (
-            f"{p.equipped_armor.name} [AC+{p.equipped_armor.ac_bonus}"
-            + (f" DR{p.equipped_armor.damage_reduction}" if p.equipped_armor.damage_reduction else "")
-            + "]"
+            f"{p.equipped_armor.name} [AC+{p.equipped_armor.ac_bonus}]"
             if p.equipped_armor else "(no armor)"
         )
         consumables = self._consumable_names()
@@ -313,6 +311,10 @@ def _format_roll_line(roll) -> str:
     rolls_str = "+".join(str(r) for r in roll.rolls)
     if len(roll.rolls) > 1:
         rolls_str = f"({rolls_str})"
+    if getattr(roll, "advantage", 0):
+        adv_tag = "adv" if roll.advantage > 0 else "dis"
+        dropped = "/".join(str(d) for d in getattr(roll, "dropped", []))
+        rolls_str += f" [dim]({adv_tag}, dropped {dropped})[/]"
 
     mod_part = ""
     if roll.modifier > 0:
@@ -335,7 +337,14 @@ def _format_roll_line(roll) -> str:
     outcome = ""
     if roll.dc is not None:
         if roll.roll_type == "attack":
-            outcome = " → [bold green]HIT[/]" if roll.success else " → [bold red]MISS[/]"
+            if getattr(roll, "is_critical", False):
+                outcome = " → [bold green]CRITICAL HIT![/]"
+            elif getattr(roll, "is_fumble", False):
+                outcome = " → [bold red]MISS (fumble!)[/]"
+            elif roll.success:
+                outcome = " → [bold green]HIT[/]"
+            else:
+                outcome = " → [bold red]MISS[/]"
         else:
             outcome = " → [bold green]✓[/]" if roll.success else " → [bold red]✗[/]"
 

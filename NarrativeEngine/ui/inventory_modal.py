@@ -94,8 +94,7 @@ class InventoryModal(ModalScreen[None]):
             lines.append("  ⚔ [dim](no weapon)[/]")
         if p.equipped_armor:
             a = p.equipped_armor
-            dr_str = f"  DR {a.damage_reduction}" if a.damage_reduction > 0 else ""
-            lines.append(f"  🛡 [bold]{a.name}[/]  [AC +{a.ac_bonus}{dr_str}]")
+            lines.append(f"  🛡 [bold]{a.name}[/]  [AC +{a.ac_bonus}]")
         else:
             lines.append("  🛡 [dim](no armor)[/]")
         return "\n".join(lines)
