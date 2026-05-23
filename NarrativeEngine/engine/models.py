@@ -126,16 +126,23 @@ class Player(Entity):
     gold: int = 0
     experience: int = 0
     status_effects: List[StatusEffect] = field(default_factory=list)
+    temp_ac_bonus: int = 0   # transient — set by Defend action, reset each combat turn
+    archetype: str = ""      # "fighter" | "mage" | "monk" | "rogue" | "" (unset)
 
     def stat_mod(self, stat: str) -> int:
         """D&D-style ability modifier: (score - 10) // 2."""
         return (self.stats.get(stat, 10) - 10) // 2
 
     @property
+    def proficiency_bonus(self) -> int:
+        """D&D 5e proficiency: +2 at Lv1, +1 per 4 levels thereafter."""
+        return 2 + (self.level - 1) // 4
+
+    @property
     def ac(self) -> int:
         dex_bonus = self.stat_mod("dexterity")
         armor_bonus = self.equipped_armor.ac_bonus if self.equipped_armor else 0
-        return 10 + dex_bonus + armor_bonus
+        return 10 + dex_bonus + armor_bonus + self.temp_ac_bonus
 
     @property
     def xp_to_next_level(self) -> int:
@@ -219,6 +226,8 @@ class GameState:
     encounter_registry: Dict[str, "EncounterTemplate"] = field(default_factory=dict)
     item_registry: Dict[str, "ItemDefinition"] = field(default_factory=dict)
     last_rolls: List[DiceRoll] = field(default_factory=list)  # transient — not saved to disk
+    enemy_attack_adv: int = 0    # transient — -1 dis / 0 normal / +1 adv for enemy; cleared after use
+    mana_shield_value: int = 0   # transient — set by Mage's Mana Shield, consumed in resolve_enemy_attack
 
     def add_log(self, message: str):
         self.log.append(message)
@@ -248,7 +257,10 @@ class GameState:
 
     def to_json(self) -> str:
         d = asdict(self)
-        d.pop("last_rolls", None)  # transient, never persisted
+        d.pop("last_rolls", None)          # transient, never persisted
+        d.pop("enemy_attack_adv", None)    # transient
+        d.pop("mana_shield_value", None)   # transient
+        d.get("player", {}).pop("temp_ac_bonus", None)  # transient
         return json.dumps(d, indent=2)
 
     @classmethod
@@ -264,6 +276,7 @@ class GameState:
 
         # Reconstruct Player with nested objects
         player_data = d.pop("player", {})
+        player_data.pop("temp_ac_bonus", None)  # transient — not in saves
         weapon_data = player_data.pop("equipped_weapon", None)
         armor_data = player_data.pop("equipped_armor", None)
         status_data = player_data.pop("status_effects", [])
@@ -298,7 +311,9 @@ class GameState:
             for iid, idata in d.pop("item_registry", {}).items()
         }
 
-        d.pop("last_rolls", None)  # not in save files, but guard anyway
+        d.pop("last_rolls", None)          # not in save files, but guard anyway
+        d.pop("enemy_attack_adv", None)    # transient — guard for forward compat
+        d.pop("mana_shield_value", None)   # transient — guard for forward compat
 
         return cls(
             player=player,

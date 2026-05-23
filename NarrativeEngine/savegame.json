@@ -1,43 +1,44 @@
 {
   "player": {
     "name": "Aurelian Exile",
-    "hp": 30,
-    "max_hp": 30,
+    "hp": 10,
+    "max_hp": 10,
     "level": 1,
     "inventory": [
       "Rusted Shortsword",
       "Patched Leather",
       "Health Potion",
-      "Traveler's Cloak"
+      "Traveler's Cloak",
+      "Mana Flask"
     ],
     "lineage": "Aurelian Bloodline",
     "bloodline_resonance": 0,
     "stats": {
-      "strength": 10,
-      "dexterity": 14,
-      "intelligence": 7,
-      "constitution": 9,
-      "wisdom": 10,
-      "charisma": 13
+      "strength": 8,
+      "dexterity": 11,
+      "intelligence": 14,
+      "constitution": 10,
+      "wisdom": 12,
+      "charisma": 12
     },
     "equipped_weapon": {
-      "name": "Rusted Shortsword",
+      "name": "Arcane Staff",
       "damage_dice": "1d6",
       "hit_bonus": 0,
-      "damage_type": "slashing",
-      "description": "A simple blade pitted with age. Reliable enough."
+      "damage_type": "bludgeoning",
+      "description": "Starting gear for Mage."
     },
     "equipped_armor": {
-      "name": "Patched Leather",
-      "ac_bonus": 1,
-      "damage_reduction": 1,
-      "description": "Scavenged leather scraps stitched into a serviceable jerkin."
+      "name": "Mage Robes",
+      "ac_bonus": 0,
+      "description": "Starting gear for Mage."
     },
     "gold": 0,
     "experience": 0,
-    "status_effects": []
+    "status_effects": [],
+    "archetype": "mage"
   },
-  "schema_version": 4,
+  "schema_version": 5,
   "current_location": "The Overgrown Outpost",
   "locations": {
     "The Overgrown Outpost": {
@@ -47,51 +48,16 @@
         "The Shattered Plaza"
       ],
       "interactables": []
-    },
-    "The Shattered Plaza": {
-      "name": "The Shattered Plaza",
-      "description": "An open expanse where the remains of old Aurelian architecture lay, dominated by the Weeping Guardian, a colossal figure standing in mournful silence.",
-      "connections": [],
-      "interactables": []
     }
   },
-  "quests": {
-    "weeping_guardian": {
-      "name": "The Weeping Guardian",
-      "description": "Seek the ancient Guardian, find a way to pacify it, and retrieve a lost relic.",
-      "objectives": [
-        "Locate the Weeping Guardian in the Shattered Plaza",
-        "Find a way to soothe or dismantle the Guardian",
-        "Retrieve the Solar Crest"
-      ],
-      "completed_objectives": [],
-      "status": "active",
-      "metadata": {
-        "guidelines": "Engage with the environment and NPCs to uncover the past and discover the Guardian's secrets."
-      }
-    }
-  },
-  "npcs": {
-    "maren": {
-      "name": "Maren",
-      "location": "The Overgrown Outpost",
-      "disposition": 40,
-      "is_known": true,
-      "metadata": {}
-    }
-  },
+  "quests": {},
+  "npcs": {},
   "world": {
-    "time_of_day": "Dawn",
+    "time_of_day": "Morning",
     "weather": "Ethereal Mist",
     "flags": {}
   },
-  "log": [
-    "NARRATOR: You blink awake in the collapsed stone stall, a remnant of commerce long past, your fingers curling around a rusted locket. The air smells of damp earth and the faintest trace of decay, a reminder of the once-bustling trade that has withered here. Outside, threads of blue-white light leak from the crumbling Needle, illuminating the muddy ground like spectral veins. The light feels unsettling, almost conscious, as if the spire is aware of your presence.\n\nTo the east, the well stands with stagnant water, its surface disturbed by yesterday's rain, but today the smell is worse \u2014 a putrid invitation. An elder widow, Maren, stands at the well's edge, her back turned to you, lips moving soundlessly as if conversing with shadows. You can't shake the feeling that the world holds its breath, waiting for something to unfold.\n\nAs you rise, the locket warms slightly in your palm, a curious contrast to the chill of dawn settling in. Maren turns ever so slowly, her face etched with lines of worry, and her voice, flat and trembling, escapes her lips: \"It's worse today...\"",
-    "PLAYER: I go to Maren",
-    "NARRATOR: The damp earth squelches beneath your feet as you approach Maren. Her frail form seems to blend into the mist, the shadows thickening around her like a shroud. She stares into the well, eyes glazed, murmuring half-formed words that drift on the air like lost prayers. The closer you get, the more you sense her unease, a palpable tension that makes the hairs on your arms stand on end.\n\n\"Worse... worse than before,\" she whispers, her voice barely breaking through the thick silence. As you draw nearer, you notice the locket in your hand pulsing ever so faintly, a warm thrum in stark contrast to the chill settling in the air. Maren glances over her shoulder, her gaze sharp and searching. \"You shouldn't be here. Not now. Not with it stirring...\"\n\nA sudden flicker of blue light arcs from the crumbling spire overhead, casting an eerie glow on her face. She shudders, stepping back from the well, and for a moment, you feel the weight of something unspoken hanging between you, a secret poised to break the fragile silence.",
-    "PLAYER: I dont understand",
-    "NARRATOR: Maren's eyes narrow slightly, a flicker of something unreadable passing through her gaze. \"You shouldn\u2019t need to understand, child. Not now. You should fear it,\" she says, her voice edged with a mix of desperation and sorrow. She gestures toward the well, where the stagnant water ripples unnaturally, as if something beneath stirs restlessly. \"The Guardian... it\u2019s waking, and the spire knows. The locket... it brings memories, but not all are yours to claim.\"\n\nThe weight of her words settles heavily in the air, thickening the mist around you. You catch a glimpse of the faded runes etched along the well\u2019s stony edge, shimmering faintly \u2014 a hesitant echo of the power that once thrived here. Maren steps back further, her expression betraying a deep-seated fear as she looks skyward, where the ethereal light flickers and dances. \"You must go. Find the Guardian before it finds you, or you may not leave this place at all.\"\n\nThe tension lingers, a taut string ready to snap. An echo of distant thunder rumbles in the far-off sky, and the ground trembles slightly beneath you, as if in response to her words. A new warmth emanates from the locket, urging you to act as shadows flit at the edges of your vision."
-  ],
+  "log": [],
   "story_history": [
     {
       "event": "Awakening in the ruins of Elowen",
@@ -102,54 +68,17 @@
         "elowen",
         "spire"
       ],
-      "timestamp": "2026-05-23T11:21:47.994075"
-    },
-    {
-      "event": "Maren warns about the Weeping Guardian awakening",
-      "choice_made": "Engaged with Maren",
-      "tags": [
-        "guardian",
-        "maren",
-        "warning"
-      ],
-      "timestamp": "2026-05-23T11:31:43.007994"
+      "timestamp": "2026-05-23T22:30:00.578372"
     }
   ],
   "session_summary": "",
   "summary_anchor_turn": 0,
-  "turn_count": 2,
+  "turn_count": 0,
   "metadata": {},
   "in_combat": false,
   "active_enemies": [],
   "combat_log": [],
-  "encounter_registry": {
-    "weeping_guardian": {
-      "id": "weeping_guardian",
-      "name": "The Weeping Guardian",
-      "description": "A towering figure of stone and crystal, weeping softly, its presence a haunting reminder of the empire's fall.",
-      "enemy": {
-        "name": "Weeping Guardian",
-        "hp": 50,
-        "max_hp": 50,
-        "ac": 14,
-        "attack_bonus": 2,
-        "damage_dice": "2d6",
-        "level": 1
-      },
-      "xp_reward": 0,
-      "gold_reward": 0,
-      "item_rewards": [],
-      "narrative_flavor": "The Guardian does not attack; rather, it seems to react to the bloodline resonance, trembling and shedding tears of light. To defeat it, one must soothe its sorrow.",
-      "defeat_condition": "soothe",
-      "quest_id": "weeping_guardian",
-      "tags": [
-        "guardian",
-        "aurelian"
-      ],
-      "is_boss": true,
-      "spawned": false
-    }
-  },
+  "encounter_registry": {},
   "item_registry": {
     "rusted_shortsword": {
       "id": "rusted_shortsword",
@@ -161,7 +90,6 @@
       "hit_bonus": 0,
       "damage_type": "slashing",
       "ac_bonus": 0,
-      "damage_reduction": 0,
       "heal_amount": 0,
       "tags": [
         "weapon",
@@ -178,7 +106,6 @@
       "hit_bonus": 0,
       "damage_type": "slashing",
       "ac_bonus": 1,
-      "damage_reduction": 1,
       "heal_amount": 0,
       "tags": [
         "armor",
@@ -195,7 +122,6 @@
       "hit_bonus": 0,
       "damage_type": "slashing",
       "ac_bonus": 0,
-      "damage_reduction": 0,
       "heal_amount": 8,
       "tags": [
         "consumable",
@@ -212,46 +138,50 @@
       "hit_bonus": 0,
       "damage_type": "slashing",
       "ac_bonus": 0,
-      "damage_reduction": 0,
       "heal_amount": 0,
       "tags": [
         "lore",
         "starter"
       ]
     },
-    "solar_crest": {
-      "id": "solar_crest",
-      "name": "Solar Crest",
-      "item_type": "quest",
-      "description": "An ancient crest that radiates warmth, rumored to hold the power to soothe the Weeping Guardian.",
+    "arcane_staff": {
+      "id": "arcane_staff",
+      "name": "Arcane Staff",
+      "item_type": "weapon",
+      "description": "Starting gear for Mage.",
       "value_gold": 0,
-      "damage_dice": null,
+      "damage_dice": "1d6",
       "hit_bonus": 0,
-      "damage_type": "slashing",
-      "ac_bonus": 3,
-      "damage_reduction": 0,
+      "damage_type": "bludgeoning",
+      "ac_bonus": 0,
       "heal_amount": 0,
-      "tags": [
-        "aurelian",
-        "crest"
-      ]
+      "tags": []
     },
-    "mana_shard": {
-      "id": "mana_shard",
-      "name": "Mana Shard",
-      "item_type": "lore",
-      "description": "A fragment of pure Aurelian energy, humming softly with untapped magic.",
+    "mage_robes": {
+      "id": "mage_robes",
+      "name": "Mage Robes",
+      "item_type": "armor",
+      "description": "Starting gear for Mage.",
       "value_gold": 0,
       "damage_dice": null,
       "hit_bonus": 0,
       "damage_type": "slashing",
       "ac_bonus": 0,
-      "damage_reduction": 0,
       "heal_amount": 0,
-      "tags": [
-        "aurelian",
-        "lore"
-      ]
+      "tags": []
+    },
+    "mana_flask": {
+      "id": "mana_flask",
+      "name": "Mana Flask",
+      "item_type": "consumable",
+      "description": "Starting gear for Mage.",
+      "value_gold": 0,
+      "damage_dice": null,
+      "hit_bonus": 0,
+      "damage_type": "slashing",
+      "ac_bonus": 0,
+      "heal_amount": 10,
+      "tags": []
     }
   }
 }

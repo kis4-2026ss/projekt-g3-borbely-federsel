@@ -49,6 +49,8 @@ _ITEM_TYPE_ICONS: Dict[str, str] = {
     "weapon":     "⚔",
     "armor":      "🛡",
     "consumable": "🧪",
+    "combat":     "💥",
+    "utility":    "🔧",
     "quest":      "★",
     "lore":       "📜",
 }
@@ -121,7 +123,7 @@ class ChronosApp(App):
         ("ctrl+u", "use_potion", "Use Item"),
         ("ctrl+a", "quick_attack", "Attack"),
         ("ctrl+e", "open_inventory", "Inventory"),
-        ("ctrl+f", "open_combat", "Combat"),
+        ("ctrl+b", "open_combat", "Combat"),
     ]
 
     def __init__(self, **kwargs):
@@ -150,7 +152,7 @@ class ChronosApp(App):
                         id="player-input",
                     )
                 yield Static(
-                    "^A Attack  ^F Combat  ^E Inventory  ^U Use Item"
+                    "^A Attack  ^B Combat  ^E Inventory  ^U Use Item"
                     "  ^S Save  ^L Load  ^D Dark  ^Q Quit",
                     id="key-hints-bar",
                 )
@@ -164,6 +166,9 @@ class ChronosApp(App):
         if result == "load":
             try:
                 self.engine.load_game()
+                # Loaded save may predate the archetype system — prompt if unset
+                if not self.engine.state.player.archetype:
+                    await self._show_class_select()
                 self.update_ui()
                 self.query_one("#player-input").focus()
                 log.write("[bold green]SYSTEM: Chronicle restored from disk.[/]")
@@ -173,9 +178,22 @@ class ChronosApp(App):
             except Exception as e:
                 log.write(f"[bold red]SYSTEM: Load failed: {e} — starting new chronicle.[/]")
         self.engine.initialize_campaign()
+        await self._show_class_select()
         self.update_ui()
         self.query_one("#player-input").focus()
         await self.process_narrative("I awaken.")
+
+    async def _show_class_select(self) -> None:
+        """Push the ClassSelectScreen modal and apply the chosen archetype."""
+        from ui.class_select_screen import ClassSelectScreen
+        from engine.archetypes import apply_archetype
+        archetype = await self.push_screen_wait(ClassSelectScreen())
+        if archetype:
+            apply_archetype(self.engine.state, archetype)
+            try:
+                self.engine.save_game()
+            except Exception:
+                pass
 
     # ── Input loop ────────────────────────────────────────────────────────
 
@@ -270,10 +288,9 @@ class ChronosApp(App):
         # Auto-open the dedicated combat UI when a new combat starts
         if not prior_in_combat and state.in_combat and state.active_enemies:
             log_widget.write(
-                "[bold red]⚔ Combat started! Press Ctrl+F to open the combat panel.[/]"
+                "[bold red]⚔ Combat started! Press [1]–[4] to act  [R] Flee[/]"
             )
-            from ui.combat_screen import CombatScreen
-            self.push_screen(CombatScreen(self.engine, self.update_ui))
+            self._open_combat_screen()
 
         if self._should_refresh_summary():
             self.run_worker(
@@ -389,12 +406,29 @@ class ChronosApp(App):
         if self._is_dead():
             return
         from ui.combat_screen import CombatScreen
-        # Don't push a second CombatScreen if one is already active
         if isinstance(self.screen, CombatScreen):
             return
         if not self.engine.state.in_combat or not self.engine.state.active_enemies:
             return
+        self._open_combat_screen()
+
+    def _open_combat_screen(self) -> None:
+        """Push the CombatScreen modal and lock the narrative input while it's open."""
+        from ui.combat_screen import CombatScreen
+        try:
+            self.query_one("#player-input", Input).disabled = True
+        except Exception:
+            pass
         self.push_screen(CombatScreen(self.engine, self.update_ui))
+
+    def on_screen_resume(self) -> None:
+        """Re-enable the narrative input whenever a modal is dismissed."""
+        try:
+            inp = self.query_one("#player-input", Input)
+            inp.disabled = False
+            inp.focus()
+        except Exception:
+            pass
 
     async def action_quick_attack(self) -> None:
         """Press 'a' during combat to immediately send an attack command."""

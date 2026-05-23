@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs ls -lh)",
+      "Bash(pip show *)",
+      "Bash(python -c \"import textual; print\\(textual.__version__\\)\")",
+      "Bash(Get-ChildItem -Path \"C:\\\\dev\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\" -Recurse -File)",
+      "Bash(Select-Object FullName)",
+      "Bash(ls \"C:\\\\Users\\\\phili\\\\.claude\\\\plans\" 2>/dev/null || echo \"Directory does not exist\")",
+      "PowerShell(python --version)",
+      "PowerShell(py --version)"
+    ]
+  }
+}
