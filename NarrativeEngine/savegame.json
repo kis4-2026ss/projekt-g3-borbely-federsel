@@ -1,42 +1,41 @@
 {
   "player": {
     "name": "Aurelian Exile",
-    "hp": 10,
-    "max_hp": 10,
+    "hp": 14,
+    "max_hp": 14,
     "level": 1,
     "inventory": [
       "Rusted Shortsword",
       "Patched Leather",
       "Health Potion",
-      "Traveler's Cloak",
-      "Mana Flask"
+      "Traveler's Cloak"
     ],
     "lineage": "Aurelian Bloodline",
     "bloodline_resonance": 0,
     "stats": {
-      "strength": 8,
-      "dexterity": 11,
-      "intelligence": 14,
-      "constitution": 10,
-      "wisdom": 12,
-      "charisma": 12
+      "strength": 15,
+      "dexterity": 10,
+      "intelligence": 8,
+      "constitution": 14,
+      "wisdom": 10,
+      "charisma": 9
     },
     "equipped_weapon": {
-      "name": "Arcane Staff",
-      "damage_dice": "1d6",
-      "hit_bonus": 0,
-      "damage_type": "bludgeoning",
-      "description": "Starting gear for Mage."
+      "name": "Ironclad Sword",
+      "damage_dice": "1d8",
+      "hit_bonus": 1,
+      "damage_type": "slashing",
+      "description": "Starting gear for Fighter."
     },
     "equipped_armor": {
-      "name": "Mage Robes",
-      "ac_bonus": 0,
-      "description": "Starting gear for Mage."
+      "name": "Chainmail",
+      "ac_bonus": 4,
+      "description": "Starting gear for Fighter."
     },
     "gold": 0,
     "experience": 0,
     "status_effects": [],
-    "archetype": "mage"
+    "archetype": "fighter"
   },
   "schema_version": 5,
   "current_location": "The Overgrown Outpost",
@@ -68,7 +67,7 @@
         "elowen",
         "spire"
       ],
-      "timestamp": "2026-05-23T22:30:00.578372"
+      "timestamp": "2026-05-24T12:22:32.505459"
     }
   ],
   "session_summary": "",
@@ -116,17 +115,14 @@
       "id": "health_potion",
       "name": "Health Potion",
       "item_type": "consumable",
-      "description": "A vial of glowing blue liquid. Tastes of copper and rain.",
+      "description": "Starting gear for Fighter.",
       "value_gold": 0,
       "damage_dice": null,
       "hit_bonus": 0,
       "damage_type": "slashing",
       "ac_bonus": 0,
-      "heal_amount": 8,
-      "tags": [
-        "consumable",
-        "starter"
-      ]
+      "heal_amount": 15,
+      "tags": []
     },
     "travelers_cloak": {
       "id": "travelers_cloak",
@@ -144,43 +140,30 @@
         "starter"
       ]
     },
-    "arcane_staff": {
-      "id": "arcane_staff",
-      "name": "Arcane Staff",
+    "ironclad_sword": {
+      "id": "ironclad_sword",
+      "name": "Ironclad Sword",
       "item_type": "weapon",
-      "description": "Starting gear for Mage.",
+      "description": "Starting gear for Fighter.",
       "value_gold": 0,
-      "damage_dice": "1d6",
-      "hit_bonus": 0,
-      "damage_type": "bludgeoning",
+      "damage_dice": "1d8",
+      "hit_bonus": 1,
+      "damage_type": "slashing",
       "ac_bonus": 0,
       "heal_amount": 0,
       "tags": []
     },
-    "mage_robes": {
-      "id": "mage_robes",
-      "name": "Mage Robes",
+    "chainmail": {
+      "id": "chainmail",
+      "name": "Chainmail",
       "item_type": "armor",
-      "description": "Starting gear for Mage.",
+      "description": "Starting gear for Fighter.",
       "value_gold": 0,
       "damage_dice": null,
       "hit_bonus": 0,
       "damage_type": "slashing",
-      "ac_bonus": 0,
+      "ac_bonus": 4,
       "heal_amount": 0,
-      "tags": []
-    },
-    "mana_flask": {
-      "id": "mana_flask",
-      "name": "Mana Flask",
-      "item_type": "consumable",
-      "description": "Starting gear for Mage.",
-      "value_gold": 0,
-      "damage_dice": null,
-      "hit_bonus": 0,
-      "damage_type": "slashing",
-      "ac_bonus": 0,
-      "heal_amount": 10,
       "tags": []
     }
   }

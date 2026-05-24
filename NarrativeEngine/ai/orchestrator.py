@@ -169,6 +169,26 @@ class PromptOrchestrator:
 
         combat_log_tail = state.combat_log[-4:] if state.combat_log else None
 
+        # DM meta block — gives the LLM an explicit phase clock so it knows
+        # when to escalate without having to infer from the hot log.
+        turns_at_location = state.turn_count - state.location_entered_turn
+        pending_encounter_ids = [
+            t.id for t in state.encounter_registry.values() if not t.spawned
+        ]
+        active_quest_ids = set(state.quests.keys())
+        pending_quest_encounters = [
+            t.id for t in state.encounter_registry.values()
+            if not t.spawned and t.quest_id in active_quest_ids
+        ]
+
+        dm_meta = {
+            "turns_at_current_location": turns_at_location,
+            "pending_encounter_ids": pending_encounter_ids,
+            "pending_quest_encounter_ids": pending_quest_encounters,
+            # Reminder: ESCALATE fires if turns_at_current_location >= 2 and
+            # pending_quest_encounters is non-empty, OR >= 2 regardless of encounters.
+        }
+
         return {
             "player": player_info,
             "location": location_info,
@@ -180,6 +200,7 @@ class PromptOrchestrator:
             "encounter_registry": encounter_summary,
             "last_round_rolls": last_round_rolls,
             "combat_log_tail": combat_log_tail,
+            "dm_meta": dm_meta,
         }
 
     def _get_relevant_history(self, state: GameState, user_input: str) -> Dict[str, Any]:

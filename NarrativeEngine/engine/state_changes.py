@@ -515,6 +515,7 @@ def _move_to(state: GameState, change: Dict[str, Any]) -> str:
     if name not in state.locations:
         state.locations[name] = Location(name=name, description="(Newly travelled-to area.)")
     state.current_location = name
+    state.location_entered_turn = state.turn_count  # reset scene clock
     return f"moved to {name}"
 
 
