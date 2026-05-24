@@ -23,12 +23,12 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
         "stats": {
             "strength": 15, "constitution": 14, "dexterity": 10,
             "intelligence": 8,  "wisdom": 10,   "charisma": 9,
-        },
-        "hp": 14,
+        },  # total: 66
+        "hp": 24,
         "actions": ["cleave", "second_wind", "defend"],  # slots [2], [3], [4]
         "starting_items": [
             {"id": "ironclad_sword",   "item_type": "weapon",    "name": "Ironclad Sword",
-             "damage_dice": "1d8", "hit_bonus": 1, "damage_type": "slashing"},
+             "damage_dice": "1d8", "hit_bonus": 2, "damage_type": "slashing"},
             {"id": "chainmail",        "item_type": "armor",     "name": "Chainmail",
              "ac_bonus": 4},
             {"id": "health_potion",    "item_type": "consumable","name": "Health Potion",
@@ -39,34 +39,36 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
         "display_name": "Mage",
         "description": "Ancient power courses through half-understood words. Strike from range; shield with will.",
         "stats": {
-            "strength": 8,  "constitution": 10, "dexterity": 11,
-            "intelligence": 14, "wisdom": 12,   "charisma": 12,
-        },
-        "hp": 10,
+            "strength": 8,  "constitution": 10, "dexterity": 12,
+            "intelligence": 15, "wisdom": 12,   "charisma": 9,
+        },  # total: 66
+        "hp": 20,
         "actions": ["arcane_bolt", "mana_shield", "evade"],
         "starting_items": [
             {"id": "arcane_staff",  "item_type": "weapon",    "name": "Arcane Staff",
-             "damage_dice": "1d6", "hit_bonus": 0, "damage_type": "bludgeoning"},
-            {"id": "mage_robes",    "item_type": "armor",     "name": "Mage Robes",
-             "ac_bonus": 0},
-            {"id": "mana_flask",    "item_type": "consumable","name": "Mana Flask",
-             "heal_amount": 10},
+             "damage_dice": "1d8", "hit_bonus": 2, "damage_type": "bludgeoning"},
+            {"id": "arcane_weave",  "item_type": "armor",     "name": "Arcane Weave",
+             "ac_bonus": 2},
+            {"id": "healing_draught", "item_type": "consumable", "name": "Healing Draught",
+             "heal_amount": 14},
         ],
     },
     "monk": {
         "display_name": "Monk",
         "description": "Silence and precision. Strike twice for less; brace, centre, endure.",
         "stats": {
-            "strength": 10, "constitution": 12, "dexterity": 13,
-            "intelligence": 10, "wisdom": 12,   "charisma": 10,
-        },
-        "hp": 12,
+            "strength": 10, "constitution": 12, "dexterity": 14,
+            "intelligence": 10, "wisdom": 11,   "charisma": 9,
+        },  # total: 66
+        "hp": 22,
         "actions": ["flurry", "iron_body", "meditate"],
         "starting_items": [
+            {"id": "iron_staff",   "item_type": "weapon",    "name": "Iron-Wrapped Staff",
+             "damage_dice": "1d8", "hit_bonus": 1, "damage_type": "bludgeoning"},
             {"id": "iron_kasa",    "item_type": "armor",     "name": "Iron Kasa",
-             "ac_bonus": 1},
+             "ac_bonus": 2},
             {"id": "bandage_wrap", "item_type": "consumable","name": "Bandage Wrap",
-             "heal_amount": 8},
+             "heal_amount": 14},
         ],
     },
     "rogue": {
@@ -75,16 +77,18 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
         "stats": {
             "strength": 9,  "constitution": 10, "dexterity": 15,
             "intelligence": 11, "wisdom": 10,   "charisma": 11,
-        },
-        "hp": 10,
+        },  # total: 66
+        "hp": 20,
         "actions": ["backstab", "smoke_screen", "poison_strike"],
         "starting_items": [
             {"id": "twin_daggers",       "item_type": "weapon",  "name": "Twin Daggers",
-             "damage_dice": "1d4", "hit_bonus": 2, "damage_type": "piercing"},
+             "damage_dice": "1d6", "hit_bonus": 2, "damage_type": "piercing"},
             {"id": "scoundrel_leathers", "item_type": "armor",   "name": "Scoundrel Leathers",
              "ac_bonus": 2},
             {"id": "smoke_bomb",         "item_type": "combat",  "name": "Smoke Bomb",
              "tags": ["enemy_disadvantage"]},
+            {"id": "bandage_wrap",       "item_type": "consumable", "name": "Bandage Wrap",
+             "heal_amount": 12},
         ],
     },
 }

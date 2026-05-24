@@ -1,8 +1,8 @@
 {
   "player": {
     "name": "Aurelian Exile",
-    "hp": 14,
-    "max_hp": 14,
+    "hp": 24,
+    "max_hp": 24,
     "level": 1,
     "inventory": [
       "Rusted Shortsword",
@@ -23,7 +23,7 @@
     "equipped_weapon": {
       "name": "Ironclad Sword",
       "damage_dice": "1d8",
-      "hit_bonus": 1,
+      "hit_bonus": 2,
       "damage_type": "slashing",
       "description": "Starting gear for Fighter."
     },
@@ -67,7 +67,7 @@
         "elowen",
         "spire"
       ],
-      "timestamp": "2026-05-24T14:34:36.289428"
+      "timestamp": "2026-05-24T21:03:59.763137"
     }
   ],
   "session_summary": "",
@@ -147,7 +147,7 @@
       "description": "Starting gear for Fighter.",
       "value_gold": 0,
       "damage_dice": "1d8",
-      "hit_bonus": 1,
+      "hit_bonus": 2,
       "damage_type": "slashing",
       "ac_bonus": 0,
       "heal_amount": 0,

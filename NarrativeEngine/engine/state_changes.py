@@ -794,6 +794,11 @@ ENCOUNTER REGISTRY (preferred for named enemies — see ENCOUNTER & ITEM RULES)
 - {"op":"define_encounter","id":"<slug>","name":"<name>","description":"<approach text>","enemy_name":"<name>","enemy_hp":<int>,"enemy_ac":<int>,"enemy_attack_bonus":<int>,"enemy_damage_dice":"1d6","enemy_damage_bonus":<int>,"enemy_level":<int>,"xp_reward":<int>,"gold_reward":<int>,"item_rewards":["<name>"],"narrative_flavor":"<combat prose guidance>","defeat_condition":"defeat|soothe|outwit|endure","quest_id":"<id>|null","tags":["<keyword>"],"is_boss":<bool>}
   NOTE: xp_reward in encounter templates is unused — XP is auto-awarded by the combat system (25 + level*25) when an enemy dies. Use gold_reward and item_rewards for loot_encounter.
 - {"op":"spawn_encounter","id":"<slug>"}
+  LOCATION RULE: Only emit spawn_encounter when the player is at the location where this
+  encounter was narratively introduced. The Weeping Guardian was introduced at the Shattered
+  Plaza — it only spawns there. If pending_encounter_ids is non-empty but the player is
+  somewhere else (forest, road, outpost), do NOT use spawn_encounter for those encounters.
+  Use start_combat with inline stats for any new threat at the current location instead.
 - {"op":"loot_encounter","id":"<slug>"}   ← emit this in AFTERMATH MODE for gold/items only; do NOT also emit award_xp — XP is auto-awarded by the combat engine when the enemy dies
 
 ITEM REGISTRY (for weapons, armor, and quest items with mechanical properties)
@@ -838,5 +843,8 @@ ACTIVITY / APPROACH
   direct physical engagement or verbal escalation past the allowed exchange limit.
   This transitions narrative_mode to "encounter" on the very next turn. The orchestrator
   clears it automatically when the player uses move_to to leave the area.
+  CRITICAL: Never emit spawn_encounter in the same turn as set_player_approaching. The
+  encounter mode transition (and any boss arrival speech) happens next turn. Combining
+  both ops skips the arrival beat entirely.
 
 Only emit changes the narrative explicitly justifies. Return [] if nothing changed."""
