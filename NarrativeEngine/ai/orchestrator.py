@@ -129,6 +129,7 @@ class PromptOrchestrator:
         p = state.player
         player_info = {
             "name": p.name,
+            "archetype": p.archetype or "unknown",
             "hp": p.hp,
             "max_hp": p.max_hp,
             "level": p.level,

@@ -1,0 +1,165 @@
+{
+  "_comment": "Combat action registry. Each entry: slot (key pressed), key (display label), id, name, short_desc (two short lines), type.",
+
+  "universal": [
+    {
+      "slot": "1",
+      "key": "1",
+      "id": "strike",
+      "name": "Strike",
+      "short_desc": "Standard attack.\nSTR + Prof vs enemy AC.",
+      "type": "attack"
+    },
+    {
+      "slot": "u",
+      "key": "^U",
+      "id": "use_item",
+      "name": "Use Item",
+      "short_desc": "Consume first usable\nitem in inventory.",
+      "type": "utility"
+    },
+    {
+      "slot": "r",
+      "key": "R",
+      "id": "flee",
+      "name": "Flee",
+      "short_desc": "Escape combat.\nCosts 10% of max HP.",
+      "type": "escape"
+    }
+  ],
+
+  "fighter": [
+    {
+      "slot": "2",
+      "key": "2",
+      "id": "cleave",
+      "name": "Cleave",
+      "short_desc": "Strike all enemies at once.\nDisadvantage to-hit.",
+      "type": "attack"
+    },
+    {
+      "slot": "3",
+      "key": "3",
+      "id": "second_wind",
+      "name": "Second Wind",
+      "short_desc": "Self-heal 1d10 + CON mod.\nEnemy still counter-attacks.",
+      "type": "heal"
+    },
+    {
+      "slot": "4",
+      "key": "4",
+      "id": "defend",
+      "name": "Defend",
+      "short_desc": "+AC (CON mod). If enemy\nmisses, riposte for free.",
+      "type": "defense"
+    }
+  ],
+
+  "mage": [
+    {
+      "slot": "2",
+      "key": "2",
+      "id": "arcane_bolt",
+      "name": "Arcane Bolt",
+      "short_desc": "INT-based ranged attack.\nRolls initiative first.",
+      "type": "attack"
+    },
+    {
+      "slot": "3",
+      "key": "3",
+      "id": "mana_shield",
+      "name": "Mana Shield",
+      "short_desc": "Conjure a damage barrier.\nEnemy still attacks through.",
+      "type": "defense"
+    },
+    {
+      "slot": "4",
+      "key": "4",
+      "id": "evade",
+      "name": "Evade",
+      "short_desc": "DEX check DC 12. Success:\nattack + foe at disadvantage.",
+      "type": "mobility"
+    }
+  ],
+
+  "monk": [
+    {
+      "slot": "2",
+      "key": "2",
+      "id": "flurry",
+      "name": "Flurry of Blows",
+      "short_desc": "Two quick 1d4+DEX strikes.\nRolls initiative first.",
+      "type": "attack"
+    },
+    {
+      "slot": "3",
+      "key": "3",
+      "id": "iron_body",
+      "name": "Iron Body",
+      "short_desc": "+AC + WIS temp HP.\nFortify before enemy swings.",
+      "type": "defense"
+    },
+    {
+      "slot": "4",
+      "key": "4",
+      "id": "meditate",
+      "name": "Meditate",
+      "short_desc": "Centre yourself. Enemy\nattacks at disadvantage.",
+      "type": "utility"
+    }
+  ],
+
+  "rogue": [
+    {
+      "slot": "2",
+      "key": "2",
+      "id": "backstab",
+      "name": "Backstab",
+      "short_desc": "Auto-advantage attack.\n+1d6 sneak damage on hit.",
+      "type": "attack"
+    },
+    {
+      "slot": "3",
+      "key": "3",
+      "id": "smoke_screen",
+      "name": "Smoke Screen",
+      "short_desc": "Blind the enemy. No attack;\nfoe at disadvantage next round.",
+      "type": "utility"
+    },
+    {
+      "slot": "4",
+      "key": "4",
+      "id": "poison_strike",
+      "name": "Poison Strike",
+      "short_desc": "Normal attack + 1d4 poison\ndamage on hit.",
+      "type": "attack"
+    }
+  ],
+
+  "fallback": [
+    {
+      "slot": "2",
+      "key": "2",
+      "id": "power_strike",
+      "name": "Power Strike",
+      "short_desc": "Disadvantage to-hit;\ndouble damage dice on hit.",
+      "type": "attack"
+    },
+    {
+      "slot": "3",
+      "key": "3",
+      "id": "evade",
+      "name": "Evade",
+      "short_desc": "DEX check DC 12. Success:\nattack + foe at disadvantage.",
+      "type": "mobility"
+    },
+    {
+      "slot": "4",
+      "key": "4",
+      "id": "defend",
+      "name": "Defend",
+      "short_desc": "+AC (CON mod). If enemy\nmisses, riposte for free.",
+      "type": "defense"
+    }
+  ]
+}

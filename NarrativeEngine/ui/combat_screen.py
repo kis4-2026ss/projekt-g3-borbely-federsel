@@ -1,4 +1,9 @@
-"""Dedicated D&D-style combat UI.
+"""Dedicated D&D-style combat UI — three-column layout.
+
+Left   : Action panel — all available actions with descriptions, loaded from
+         engine/combat_actions.json. Active action is highlighted live.
+Centre : Combat log — append-only round-by-round narration.
+Right  : Stats panel — enemy HP/AC, player HP/AC/XP.
 
 Opened automatically when in_combat becomes True (from app.py).
 The player picks one action per turn from a numbered menu:
@@ -7,7 +12,7 @@ The player picks one action per turn from a numbered menu:
     1  — Strike       standard attack (STR-based)
     ^U — Use Item     consume first usable item in inventory
     R  — Flee         end combat, small HP penalty
-    Esc — close overlay (combat state preserved)
+    Esc — close overlay (combat state preserved unless victory/flee)
 
   Slots [2]–[4] are archetype-specific:
     Fighter  — Cleave / Second Wind / Defend
@@ -17,21 +22,61 @@ The player picks one action per turn from a numbered menu:
     (none)   — Power Strike / Evade / Defend  (fallback)
 """
 
+import json
+import os
 from typing import Dict, List, Optional, Tuple
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Label, Static, RichLog
 
-# Maps archetype key → (slot2_label, slot3_label, slot4_label) shown in the hints bar
-_ARCHETYPE_LABELS: Dict[str, Tuple[str, str, str]] = {
-    "fighter": ("[2] Cleave",       "[3] Second Wind", "[4] Defend"),
-    "mage":    ("[2] Arcane Bolt",  "[3] Mana Shield", "[4] Evade"),
-    "monk":    ("[2] Flurry",       "[3] Iron Body",   "[4] Meditate"),
-    "rogue":   ("[2] Backstab",     "[3] Smoke Screen","[4] Poison Strike"),
-    "":        ("[2] Power Strike", "[3] Evade",       "[4] Defend"),  # fallback
+# Type alias for one action entry loaded from the JSON
+_ActionEntry = Dict[str, str]
+
+# Inline fallback if combat_actions.json is missing or unreadable
+_FALLBACK_ACTIONS: Dict[str, List[_ActionEntry]] = {
+    "universal": [
+        {"slot": "1", "key": "1", "id": "strike",   "name": "Strike",    "short_desc": "STR attack vs AC.", "type": "attack"},
+        {"slot": "u", "key": "^U","id": "use_item", "name": "Use Item",  "short_desc": "Use first consumable.", "type": "utility"},
+        {"slot": "r", "key": "R", "id": "flee",     "name": "Flee",      "short_desc": "Escape (10% HP).", "type": "escape"},
+    ],
+    "fighter":  [
+        {"slot": "2", "key": "2", "id": "cleave",       "name": "Cleave",       "short_desc": "All enemies, disadv.", "type": "attack"},
+        {"slot": "3", "key": "3", "id": "second_wind",  "name": "Second Wind",  "short_desc": "Heal 1d10+CON.", "type": "heal"},
+        {"slot": "4", "key": "4", "id": "defend",       "name": "Defend",       "short_desc": "+AC, riposte.", "type": "defense"},
+    ],
+    "mage":  [
+        {"slot": "2", "key": "2", "id": "arcane_bolt",  "name": "Arcane Bolt",  "short_desc": "INT ranged attack.", "type": "attack"},
+        {"slot": "3", "key": "3", "id": "mana_shield",  "name": "Mana Shield",  "short_desc": "Damage barrier.", "type": "defense"},
+        {"slot": "4", "key": "4", "id": "evade",        "name": "Evade",        "short_desc": "DEX DC12, counter.", "type": "mobility"},
+    ],
+    "monk":  [
+        {"slot": "2", "key": "2", "id": "flurry",       "name": "Flurry",       "short_desc": "Two 1d4+DEX hits.", "type": "attack"},
+        {"slot": "3", "key": "3", "id": "iron_body",    "name": "Iron Body",    "short_desc": "+AC+WIS temp HP.", "type": "defense"},
+        {"slot": "4", "key": "4", "id": "meditate",     "name": "Meditate",     "short_desc": "Foe at disadv.", "type": "utility"},
+    ],
+    "rogue":  [
+        {"slot": "2", "key": "2", "id": "backstab",     "name": "Backstab",     "short_desc": "Adv + 1d6 sneak.", "type": "attack"},
+        {"slot": "3", "key": "3", "id": "smoke_screen", "name": "Smoke Screen", "short_desc": "Blind foe.", "type": "utility"},
+        {"slot": "4", "key": "4", "id": "poison_strike","name": "Poison Strike","short_desc": "Attack + 1d4 poison.", "type": "attack"},
+    ],
+    "fallback":  [
+        {"slot": "2", "key": "2", "id": "power_strike", "name": "Power Strike", "short_desc": "Disadv, double dmg.", "type": "attack"},
+        {"slot": "3", "key": "3", "id": "evade",        "name": "Evade",        "short_desc": "DEX DC12, counter.", "type": "mobility"},
+        {"slot": "4", "key": "4", "id": "defend",       "name": "Defend",       "short_desc": "+AC, riposte.", "type": "defense"},
+    ],
+}
+
+# Type-to-colour mapping for action type badge
+_TYPE_COLOR: Dict[str, str] = {
+    "attack":   "red",
+    "heal":     "green",
+    "defense":  "blue",
+    "mobility": "cyan",
+    "utility":  "yellow",
+    "escape":   "dim",
 }
 
 
@@ -44,13 +89,13 @@ class CombatScreen(ModalScreen[None]):
     }
 
     #combat-panel {
-        width: 92%;
-        height: 92%;
-        min-width: 60;
-        max-width: 110;
+        width: 96%;
+        height: 96%;
+        min-width: 80;
+        max-width: 160;
         background: #0d0d0d;
         border: double red;
-        padding: 1 2;
+        padding: 0;
     }
 
     #combat-title {
@@ -58,53 +103,58 @@ class CombatScreen(ModalScreen[None]):
         text-style: bold;
         color: red;
         height: 1;
-        margin-bottom: 1;
-    }
-
-    #enemy-section {
-        height: auto;
+        padding: 0 2;
         background: #1a0000;
-        border: tall $error;
-        padding: 0 1;
-        margin-bottom: 1;
     }
 
-    #player-section {
-        height: auto;
-        background: #001a00;
-        border: tall $success;
+    #combat-main {
+        height: 1fr;
+        layout: horizontal;
+    }
+
+    #actions-col {
+        width: 30;
+        background: #0a0a1a;
+        border-right: tall $accent;
         padding: 0 1;
-        margin-bottom: 1;
+        overflow-y: auto;
+    }
+
+    #log-col {
+        width: 1fr;
+        padding: 0 1;
+    }
+
+    #stats-col {
+        width: 30;
+        background: #1a0a0a;
+        border-left: tall $error;
+        padding: 0 1;
+        overflow-y: auto;
     }
 
     #combat-log {
         height: 1fr;
         background: #000000;
-        border: solid $accent;
-        margin-bottom: 1;
         scrollbar-gutter: stable;
-    }
-
-    #action-hints {
-        height: 2;
-        text-align: center;
-        color: $text-muted;
     }
 
     #combat-status {
         height: 1;
         text-align: center;
+        background: #1a1a1a;
+        padding: 0 2;
     }
     """
 
     BINDINGS = [
-        Binding("1",       "strike",         "1 Strike",   priority=True, show=False),
-        Binding("2",       "slot2",          "2 Action",   priority=True, show=False),
-        Binding("3",       "slot3",          "3 Action",   priority=True, show=False),
-        Binding("4",       "slot4",          "4 Action",   priority=True, show=False),
-        Binding("ctrl+u",  "use_item",       "^U Use Item",priority=True, show=False),
-        Binding("r",       "flee",           "R Flee",     priority=True, show=False),
-        Binding("escape",  "dismiss_combat", "Esc Close",  show=False),
+        Binding("1",       "strike",         "1 Strike",    priority=True, show=False),
+        Binding("2",       "slot2",          "2 Action",    priority=True, show=False),
+        Binding("3",       "slot3",          "3 Action",    priority=True, show=False),
+        Binding("4",       "slot4",          "4 Action",    priority=True, show=False),
+        Binding("ctrl+u",  "use_item",       "^U Use Item", priority=True, show=False),
+        Binding("r",       "flee",           "R Flee",      priority=True, show=False),
+        Binding("escape",  "dismiss_combat", "Esc Close",   show=False),
     ]
 
     def __init__(self, engine, refresh_parent):
@@ -112,124 +162,221 @@ class CombatScreen(ModalScreen[None]):
         self.engine = engine
         self.refresh_parent = refresh_parent
         self.round = 0
+        self._active_slot: str = ""          # slot key being executed right now
+        self._action_db: Dict = {}           # raw JSON data
+        self._actions: List[_ActionEntry] = []  # merged universal + archetype list
+        self._load_actions()
+
+    # ── Action registry ───────────────────────────────────────────────────
+
+    def _load_actions(self) -> None:
+        """Load engine/combat_actions.json and merge universal + archetype entries."""
+        try:
+            json_path = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                "engine", "combat_actions.json"
+            )
+            with open(json_path, encoding="utf-8") as f:
+                self._action_db = json.load(f)
+        except Exception:
+            self._action_db = _FALLBACK_ACTIONS
+
+        arch = self.engine.state.player.archetype or ""
+        arch_key = arch if arch in self._action_db else "fallback"
+        universal = self._action_db.get("universal", _FALLBACK_ACTIONS["universal"])
+        specific  = self._action_db.get(arch_key,   _FALLBACK_ACTIONS.get(arch_key, []))
+        self._actions = list(universal) + list(specific)
 
     # ── Compose ───────────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
         with Vertical(id="combat-panel"):
             yield Static("⚔  C O M B A T  ⚔", id="combat-title", markup=True)
-            yield Static(self._render_enemy_block(), id="enemy-section", markup=True)
-            yield Static(self._render_player_block(), id="player-section", markup=True)
-            yield RichLog(id="combat-log", wrap=True, markup=True)
+            with Horizontal(id="combat-main"):
+                with VerticalScroll(id="actions-col"):
+                    yield Static("", id="actions-content", markup=True)
+                with Vertical(id="log-col"):
+                    yield RichLog(id="combat-log", wrap=True, markup=True)
+                with VerticalScroll(id="stats-col"):
+                    yield Static("", id="stats-content", markup=True)
             yield Static("", id="combat-status", markup=True)
-            yield Static(
-                "[dim][1] Strike  [2] Power Strike  [3] Evade  [4] Defend[/]\n"
-                "[dim][^U] Use Item  [R] Flee  [Esc] Close[/]",
-                id="action-hints",
-                markup=True,
-            )
 
     def on_mount(self) -> None:
-        """Populate the combat log with existing entries and set the action guide."""
+        """Populate the combat log with existing entries and do an initial panel render."""
         log = self.query_one("#combat-log", RichLog)
         state = self.engine.state
         for line in state.combat_log[-8:]:
             log.write(f"[dim]{line}[/]")
         if not state.combat_log:
             log.write("[italic dim]The battle begins…[/]")
-        # Write archetype-aware guide to the log
-        arch = state.player.archetype
-        labels = _ARCHETYPE_LABELS.get(arch, _ARCHETYPE_LABELS[""])
-        l0, l1, l2 = labels
-        log.write(
-            f"[dim cyan]━━  [1] Strike  │  {l0}  │  {l1}  │  {l2}  │  [^U] Item  ━━[/]"
-        )
-        # Initialise hints bar to match the archetype
-        self._update_hints()
+        self._refresh_panels()
 
     # ── Rendering ─────────────────────────────────────────────────────────
 
-    def _render_enemy_block(self) -> str:
+    def _render_actions_panel(self) -> str:
+        """Build Rich markup for the left actions column."""
         state = self.engine.state
-        if not state.active_enemies:
-            return "[dim](no enemies)[/]"
-        lines = []
-        for i, enemy in enumerate(state.active_enemies):
-            marker = "[bold yellow]▶[/] " if i == 0 else "  "
-            lines.append(
-                f"{marker}[bold red]{enemy.name}[/]  "
-                f"[dim]Lv.{enemy.level}  AC {enemy.ac}  ATK +{enemy.attack_bonus}"
-                f"  DMG {enemy.damage_dice}+{enemy.damage_bonus}[/]"
+        lines: List[str] = ["[bold underline]ACTIONS[/]\n"]
+
+        # Collect first consumable name for Use Item dynamic label
+        consumable_name = ""
+        for name in state.player.inventory:
+            item = next(
+                (it for it in state.item_registry.values() if it.name == name),
+                None,
             )
-            lines.append(_hp_bar(enemy.hp, enemy.max_hp, label="HP"))
+            if item and (
+                (item.item_type == "consumable" and item.heal_amount > 0)
+                or item.item_type == "combat"
+            ):
+                consumable_name = name
+                break
+
+        for entry in self._actions:
+            slot      = entry.get("slot", "")
+            key       = entry.get("key", slot)
+            name      = entry.get("name", "")
+            raw_desc  = entry.get("short_desc", "")
+            etype     = entry.get("type", "attack")
+            color     = _TYPE_COLOR.get(etype, "white")
+            active    = slot == self._active_slot
+
+            # Dynamic use-item description
+            if entry.get("id") == "use_item":
+                if consumable_name:
+                    raw_desc = f"{consumable_name}"
+                else:
+                    raw_desc = "(nothing usable)"
+
+            # Highlight active action
+            if active:
+                key_markup  = f"[bold yellow]\\[{key}][/]"
+                name_markup = f"[bold yellow]▶ {name}[/]"
+            else:
+                key_markup  = f"[dim]\\[{key}][/]"
+                name_markup = f"[{color}]{name}[/]"
+
+            lines.append(f"{key_markup} {name_markup}")
+
+            # Description lines — indent, split on \n
+            for desc_line in raw_desc.split("\n"):
+                if active:
+                    lines.append(f"  [yellow]{desc_line}[/]")
+                else:
+                    lines.append(f"  [dim]{desc_line}[/]")
+            lines.append("")
+
         return "\n".join(lines)
 
-    def _render_player_block(self) -> str:
+    def _render_stats_panel(self) -> str:
+        """Build Rich markup for the right stats column (enemy + player)."""
         state = self.engine.state
         p = state.player
-        weapon_str = (
-            f"{p.equipped_weapon.name} [{p.equipped_weapon.damage_dice}]"
-            if p.equipped_weapon else "(no weapon)"
-        )
-        armor_str = (
-            f"{p.equipped_armor.name} [AC+{p.equipped_armor.ac_bonus}]"
-            if p.equipped_armor else "(no armor)"
-        )
-        consumables = self._consumable_names()
-        inv_str = ", ".join(consumables) if consumables else "(none)"
-        if p.temp_ac_bonus:
-            bonus_label = "Iron Body" if p.archetype == "monk" else "Defending"
-            ac_str = f"{p.ac} [bold green](+{p.temp_ac_bonus} {bonus_label})[/]"
-        else:
-            ac_str = str(p.ac)
-        arch_label = f"  [{p.archetype.title()}]" if p.archetype else ""
+        lines: List[str] = []
 
-        lines = [
-            f"[bold green]{p.name}[/]{arch_label}  "
-            f"[dim]Lv.{p.level}  AC {ac_str}  Prof +{p.proficiency_bonus}"
-            f"  XP {p.experience}/{p.xp_to_next_level}[/]",
-            _hp_bar(p.hp, p.max_hp, label="HP"),
-            f"  ⚔ {weapon_str}   🛡 {armor_str}",
-            f"  🧪 Usable: {inv_str}",
-        ]
+        # ── Enemy block ───────────────────────────────────────────────────
+        if state.active_enemies:
+            lines.append("[bold underline]ENEMY[/]\n")
+            for i, enemy in enumerate(state.active_enemies):
+                marker = "[bold yellow]▶[/] " if i == 0 else "  "
+                lines.append(
+                    f"{marker}[bold red]{enemy.name}[/]"
+                )
+                lines.append(
+                    f"  [dim]Lv.{enemy.level}  AC {enemy.ac}"
+                    f"  ATK +{enemy.attack_bonus}[/]"
+                )
+                lines.append(
+                    f"  [dim]DMG {enemy.damage_dice}"
+                    + (f"+{enemy.damage_bonus}" if enemy.damage_bonus else "")
+                    + "[/]"
+                )
+                lines.append(_hp_bar(enemy.hp, enemy.max_hp))
+                lines.append("")
+        else:
+            lines.append("[dim](no enemies)[/]\n")
+
+        # ── Divider ───────────────────────────────────────────────────────
+        lines.append("[dim]─────────────────────[/]")
+        lines.append("")
+
+        # ── Player block ──────────────────────────────────────────────────
+        lines.append("[bold underline]YOU[/]\n")
+        arch_label = f"[dim]{p.archetype.title()}[/]  " if p.archetype else ""
+        lines.append(f"  {arch_label}[bold green]{p.name}[/]  [dim]Lv.{p.level}[/]")
+
+        # AC with temp bonus indicator
+        if p.temp_ac_bonus:
+            label = "Iron Body" if p.archetype == "monk" else "Defending"
+            lines.append(f"  AC [bold cyan]{p.ac}[/] [dim](+{p.temp_ac_bonus} {label})[/]")
+        else:
+            lines.append(f"  AC [bold cyan]{p.ac}[/]  [dim]Prof +{p.proficiency_bonus}[/]")
+
+        lines.append(_hp_bar(p.hp, p.max_hp))
+
+        # XP bar
+        xp_ratio = min(p.experience / max(p.xp_to_next_level, 1), 1.0)
+        xp_filled = max(0, min(16, int(xp_ratio * 16)))
+        xp_bar = (
+            "[blue]" + "█" * xp_filled + "[/]"
+            + "[dim]" + "░" * (16 - xp_filled) + "[/]"
+        )
+        lines.append(f"  XP {xp_bar}")
+        lines.append(f"  [dim]{p.experience}/{p.xp_to_next_level}  Gold: {p.gold}[/]")
+
+        # Status effects
+        if p.status_effects:
+            lines.append("")
+            lines.append("  [bold]STATUS[/]")
+            for eff in p.status_effects:
+                mod_str = ""
+                if eff.roll_modifier != 0:
+                    mod_str = f" {'+' if eff.roll_modifier >= 0 else ''}{eff.roll_modifier}"
+                adv = getattr(eff, "advantage", 0)
+                if adv > 0:
+                    mod_str += " [green]adv[/]"
+                elif adv < 0:
+                    mod_str += " [red]dis[/]"
+                color = "red" if eff.roll_modifier < 0 else "green" if eff.roll_modifier > 0 else "yellow"
+                lines.append(f"  [{color}]{eff.name}[/]{mod_str} ({eff.duration_turns}t)")
+
         return "\n".join(lines)
 
-    def _consumable_names(self) -> List[str]:
-        state = self.engine.state
-        return [name for name in state.player.inventory if self._is_usable(name)]
-
-    def _is_usable(self, item_name: str) -> bool:
-        item = next(
-            (it for it in self.engine.state.item_registry.values() if it.name == item_name),
-            None,
-        )
-        if item is None:
-            return False
-        if item.item_type == "consumable" and item.heal_amount > 0:
-            return True
-        if item.item_type == "combat":
-            return True
-        return False
-
-    def _update_hints(self) -> None:
-        """Refresh the action-hints bar to match the current archetype."""
-        arch = self.engine.state.player.archetype
-        labels = _ARCHETYPE_LABELS.get(arch, _ARCHETYPE_LABELS[""])
-        l0, l1, l2 = labels
-        line1 = f"[dim][1] Strike  {l0}  {l1}  {l2}[/]"
-        line2 = "[dim][^U] Use Item  [R] Flee  [Esc] Close[/]"
-        self.query_one("#action-hints", Static).update(f"{line1}\n{line2}")
-
     def _refresh_panels(self) -> None:
-        self.query_one("#enemy-section", Static).update(self._render_enemy_block())
-        self.query_one("#player-section", Static).update(self._render_player_block())
-        self._update_hints()
+        """Re-render the actions column and the stats column."""
+        try:
+            self.query_one("#actions-content", Static).update(
+                self._render_actions_panel()
+            )
+        except Exception:
+            pass
+        try:
+            self.query_one("#stats-content", Static).update(
+                self._render_stats_panel()
+            )
+        except Exception:
+            pass
 
     def _set_status(self, text: str, color: str = "white") -> None:
-        self.query_one("#combat-status", Static).update(f"[{color}]{text}[/]")
+        try:
+            self.query_one("#combat-status", Static).update(f"[{color}]{text}[/]")
+        except Exception:
+            pass
 
     def _log(self, text: str) -> None:
-        self.query_one("#combat-log", RichLog).write(text)
+        try:
+            self.query_one("#combat-log", RichLog).write(text)
+        except Exception:
+            pass
+
+    def _set_active(self, slot: str) -> None:
+        """Highlight the given slot in the actions panel, then immediately refresh."""
+        self._active_slot = slot
+        self._refresh_panels()
+
+    def _clear_active(self) -> None:
+        """Clear the active-slot highlight."""
+        self._active_slot = ""
 
     # ── Shared action helpers ─────────────────────────────────────────────
 
@@ -247,7 +394,6 @@ class CombatScreen(ModalScreen[None]):
     def _start_round(self) -> None:
         """Housekeeping at the top of every player action."""
         self.round += 1
-        # Clear the previous turn's Defend bonus before the new action resolves
         self.engine.state.player.temp_ac_bonus = 0
 
     def _roll_initiative_and_log(self, enemy) -> bool:
@@ -266,12 +412,12 @@ class CombatScreen(ModalScreen[None]):
 
     def _do_enemy_counter(self, cm, enemy) -> bool:
         """Run enemy counter-attack. Returns True if player died."""
-        from engine.combat import _award_xp_for_kill  # noqa: F401 — unused here but imported for clarity
         enemy_rolls = cm.resolve_enemy_attack(enemy)
         for r in enemy_rolls:
             self._log(_format_roll_line(r))
         if self.engine.state.player.hp <= 0:
             self._log("[bold red]You have fallen in battle.[/]")
+            self._clear_active()
             self._refresh_panels()
             self.refresh_parent()
             self.app._handle_player_death()
@@ -297,11 +443,12 @@ class CombatScreen(ModalScreen[None]):
 
     def _finish_round(self, enemy, enemy_died: bool) -> None:
         """Refresh UI and handle end-of-round state."""
+        self._clear_active()
         self._refresh_panels()
         self.refresh_parent()
         if enemy_died and not self.engine.state.in_combat:
-            self._set_status("Victory! All enemies defeated.", "green")
-            self.call_after_refresh(self._close_after_victory)
+            self._set_status("Victory! All enemies defeated. Press Esc to continue.", "green")
+            self.call_after_refresh(self._show_victory_screen)
         elif not enemy_died:
             state = self.engine.state
             p = state.player
@@ -322,16 +469,15 @@ class CombatScreen(ModalScreen[None]):
         state = self.engine.state
         enemy = state.active_enemies[0]
         cm = CombatManager(state)
+        self._set_active("1")
         self._start_round()
 
         player_first = self._roll_initiative_and_log(enemy)
 
         if not player_first:
-            # Enemy strikes first
             if self._do_enemy_counter(cm, enemy):
                 return
 
-        # Player attacks
         player_rolls = cm.resolve_player_attack(enemy)
         for r in player_rolls:
             self._log(_format_roll_line(r))
@@ -342,7 +488,6 @@ class CombatScreen(ModalScreen[None]):
             return
 
         if player_first:
-            # Enemy counter-attack
             if self._do_enemy_counter(cm, enemy):
                 return
 
@@ -356,6 +501,7 @@ class CombatScreen(ModalScreen[None]):
         state = self.engine.state
         enemy = state.active_enemies[0]
         cm = CombatManager(state)
+        # _active_slot already set by action_slot2 dispatcher
         self._start_round()
 
         player_first = self._roll_initiative_and_log(enemy)
@@ -364,7 +510,6 @@ class CombatScreen(ModalScreen[None]):
             if self._do_enemy_counter(cm, enemy):
                 return
 
-        # Player power-strikes
         self._log("[bold magenta]⚡ Power Strike![/]")
         player_rolls = cm.resolve_power_strike(enemy)
         for r in player_rolls:
@@ -382,16 +527,14 @@ class CombatScreen(ModalScreen[None]):
         self._finish_round(enemy, False)
 
     def action_evade(self) -> None:
-        """Evade: DEX check vs DC 12.
-        Success → player strikes AND enemy counter at disadvantage.
-        Failure → player is off-balance, enemy counter at advantage.
-        """
+        """Evade: DEX check vs DC 12."""
         if self._guard():
             return
         from engine.combat import CombatManager
         state = self.engine.state
         enemy = state.active_enemies[0]
         cm = CombatManager(state)
+        # _active_slot already set by action_slot3/slot4 dispatcher
         self._start_round()
 
         self._log(f"[bold cyan]🌀 Evade — Round {self.round}[/]")
@@ -400,7 +543,6 @@ class CombatScreen(ModalScreen[None]):
 
         if success:
             self._log("[cyan]You slip the strike — and lunge back![/]")
-            # Player attacks in the same round
             player_rolls = cm.resolve_player_attack(enemy)
             for r in player_rolls:
                 self._log(_format_roll_line(r))
@@ -408,12 +550,10 @@ class CombatScreen(ModalScreen[None]):
             if enemy_died:
                 self._finish_round(enemy, True)
                 return
-            # Enemy counter at disadvantage (flag already set by resolve_evade)
             if self._do_enemy_counter(cm, enemy):
                 return
         else:
             self._log("[red]Caught off-balance — enemy strikes with advantage![/]")
-            # No player attack; enemy has advantage (flag set by resolve_evade)
             if self._do_enemy_counter(cm, enemy):
                 return
 
@@ -427,6 +567,7 @@ class CombatScreen(ModalScreen[None]):
         state = self.engine.state
         enemy = state.active_enemies[0]
         cm = CombatManager(state)
+        # _active_slot already set by action_slot4 dispatcher
         self._start_round()
 
         ac_bonus = cm.resolve_defend()
@@ -435,20 +576,19 @@ class CombatScreen(ModalScreen[None]):
             f"(+{ac_bonus} AC  [dim]— miss = riposte[/])[/]"
         )
 
-        # Run enemy attack inline so we can inspect the roll for riposte
         enemy_rolls = cm.resolve_enemy_attack(enemy)
         for r in enemy_rolls:
             self._log(_format_roll_line(r))
 
         if state.player.hp <= 0:
             self._log("[bold red]You have fallen in battle.[/]")
+            self._clear_active()
             self._refresh_panels()
             self.refresh_parent()
             self.app._handle_player_death()
             self.dismiss()
             return
 
-        # Riposte: enemy's attack roll missed → free counter-attack
         attack_roll = enemy_rolls[0] if enemy_rolls else None
         if attack_roll is not None and attack_roll.success is False:
             self._log("[bold cyan]⚡ Riposte! Their swing found only air.[/]")
@@ -469,6 +609,7 @@ class CombatScreen(ModalScreen[None]):
         if not consumables:
             self._set_status("No usable items in inventory.", "yellow")
             return
+        self._set_active("u")
         item_name = consumables[0]
         state = self.engine.state
         item = next(
@@ -485,8 +626,26 @@ class CombatScreen(ModalScreen[None]):
                 self._set_status(msg, "green")
             else:
                 self._set_status(msg, "red")
+        self._clear_active()
         self._refresh_panels()
         self.refresh_parent()
+
+    def _consumable_names(self) -> List[str]:
+        state = self.engine.state
+        return [name for name in state.player.inventory if self._is_usable(name)]
+
+    def _is_usable(self, item_name: str) -> bool:
+        item = next(
+            (it for it in self.engine.state.item_registry.values() if it.name == item_name),
+            None,
+        )
+        if item is None:
+            return False
+        if item.item_type == "consumable" and item.heal_amount > 0:
+            return True
+        if item.item_type == "combat":
+            return True
+        return False
 
     def _apply_combat_item(self, item) -> None:
         """Resolve the mechanical effect of a combat-type item."""
@@ -524,7 +683,7 @@ class CombatScreen(ModalScreen[None]):
     # ── Archetype slot dispatchers ────────────────────────────────────────
 
     def action_slot2(self) -> None:
-        """Dispatch [2] to the archetype-appropriate action."""
+        self._set_active("2")
         arch = self.engine.state.player.archetype
         if arch == "fighter":
             self._do_cleave()
@@ -538,7 +697,7 @@ class CombatScreen(ModalScreen[None]):
             self.action_power_strike()
 
     def action_slot3(self) -> None:
-        """Dispatch [3] to the archetype-appropriate action."""
+        self._set_active("3")
         arch = self.engine.state.player.archetype
         if arch == "fighter":
             self._do_second_wind()
@@ -552,7 +711,7 @@ class CombatScreen(ModalScreen[None]):
             self.action_evade()
 
     def action_slot4(self) -> None:
-        """Dispatch [4] to the archetype-appropriate action."""
+        self._set_active("4")
         arch = self.engine.state.player.archetype
         if arch == "mage":
             self.action_evade()
@@ -561,17 +720,17 @@ class CombatScreen(ModalScreen[None]):
         elif arch == "rogue":
             self._do_poison_strike()
         else:
-            self.action_defend()  # fighter + fallback
+            self.action_defend()
 
     # ── Fighter actions ───────────────────────────────────────────────────
 
     def _do_cleave(self) -> None:
-        """Fighter — Cleave: attack all enemies at disadvantage."""
         if self._guard():
             return
         from engine.combat import CombatManager
         state = self.engine.state
         cm = CombatManager(state)
+        self._set_active("2")
         self._start_round()
         self._log(f"[bold red]⚔ Cleave! — Round {self.round}[/]")
 
@@ -580,7 +739,6 @@ class CombatScreen(ModalScreen[None]):
         for r in rolls:
             self._log(_format_roll_line(r))
 
-        # Check each enemy for death; track whether any survive
         all_dead = True
         for enemy in enemies_snapshot:
             if not self._check_enemy_dead(enemy):
@@ -590,20 +748,19 @@ class CombatScreen(ModalScreen[None]):
             self._finish_round(enemies_snapshot[0], True)
             return
 
-        # Counter-attack from the first surviving enemy
         first_survivor = state.active_enemies[0]
         if self._do_enemy_counter(cm, first_survivor):
             return
         self._finish_round(first_survivor, False)
 
     def _do_second_wind(self) -> None:
-        """Fighter — Second Wind: self-heal 1d10 + CON_mod; enemy still attacks."""
         if self._guard():
             return
         from engine.combat import CombatManager
         state = self.engine.state
         enemy = state.active_enemies[0]
         cm = CombatManager(state)
+        self._set_active("3")
         self._start_round()
         self._log(f"[bold green]💚 Second Wind — Round {self.round}[/]")
         rolls = cm.resolve_second_wind()
@@ -616,13 +773,13 @@ class CombatScreen(ModalScreen[None]):
     # ── Mage actions ──────────────────────────────────────────────────────
 
     def _do_arcane_bolt(self) -> None:
-        """Mage — Arcane Bolt: INT-based ranged attack."""
         if self._guard():
             return
         from engine.combat import CombatManager
         state = self.engine.state
         enemy = state.active_enemies[0]
         cm = CombatManager(state)
+        self._set_active("2")
         self._start_round()
 
         player_first = self._roll_initiative_and_log(enemy)
@@ -645,13 +802,13 @@ class CombatScreen(ModalScreen[None]):
         self._finish_round(enemy, False)
 
     def _do_mana_shield(self) -> None:
-        """Mage — Mana Shield: charge absorption; enemy still attacks."""
         if self._guard():
             return
         from engine.combat import CombatManager
         state = self.engine.state
         enemy = state.active_enemies[0]
         cm = CombatManager(state)
+        self._set_active("3")
         self._start_round()
         self._log(f"[bold blue]🔮 Mana Shield — Round {self.round}[/]")
         rolls = cm.resolve_mana_shield()
@@ -664,13 +821,13 @@ class CombatScreen(ModalScreen[None]):
     # ── Monk actions ──────────────────────────────────────────────────────
 
     def _do_flurry(self) -> None:
-        """Monk — Flurry of Blows: two quick 1d4+DEX attacks."""
         if self._guard():
             return
         from engine.combat import CombatManager
         state = self.engine.state
         enemy = state.active_enemies[0]
         cm = CombatManager(state)
+        self._set_active("2")
         self._start_round()
 
         player_first = self._roll_initiative_and_log(enemy)
@@ -693,13 +850,13 @@ class CombatScreen(ModalScreen[None]):
         self._finish_round(enemy, False)
 
     def _do_iron_body(self) -> None:
-        """Monk — Iron Body: AC bonus + WIS temp HP; enemy still attacks."""
         if self._guard():
             return
         from engine.combat import CombatManager
         state = self.engine.state
         enemy = state.active_enemies[0]
         cm = CombatManager(state)
+        self._set_active("3")
         self._start_round()
 
         ac_bonus = cm.resolve_iron_body()
@@ -707,19 +864,19 @@ class CombatScreen(ModalScreen[None]):
             f"[bold cyan]🗿 Iron Body — Round {self.round}  "
             f"(+{ac_bonus} AC[dim] — stance holds[/])[/]"
         )
-        self._refresh_panels()  # show updated AC before enemy attacks
+        self._refresh_panels()
         if self._do_enemy_counter(cm, enemy):
             return
         self._finish_round(enemy, False)
 
     def _do_meditate(self) -> None:
-        """Monk — Meditate: enemy at disadvantage; gain Focused for next round."""
         if self._guard():
             return
         from engine.combat import CombatManager
         state = self.engine.state
         enemy = state.active_enemies[0]
         cm = CombatManager(state)
+        self._set_active("4")
         self._start_round()
         self._log(f"[bold cyan]🧘 Meditate — Round {self.round}[/]")
         cm.resolve_meditate()
@@ -731,13 +888,13 @@ class CombatScreen(ModalScreen[None]):
     # ── Rogue actions ─────────────────────────────────────────────────────
 
     def _do_backstab(self) -> None:
-        """Rogue — Backstab: auto-advantage + 1d6 sneak damage on hit."""
         if self._guard():
             return
         from engine.combat import CombatManager
         state = self.engine.state
         enemy = state.active_enemies[0]
         cm = CombatManager(state)
+        self._set_active("2")
         self._start_round()
 
         player_first = self._roll_initiative_and_log(enemy)
@@ -760,13 +917,13 @@ class CombatScreen(ModalScreen[None]):
         self._finish_round(enemy, False)
 
     def _do_smoke_screen(self) -> None:
-        """Rogue — Smoke Screen: no attack; enemy blind, player concealed."""
         if self._guard():
             return
         from engine.combat import CombatManager
         state = self.engine.state
         enemy = state.active_enemies[0]
         cm = CombatManager(state)
+        self._set_active("3")
         self._start_round()
         self._log(f"[bold yellow]💨 Smoke Screen — Round {self.round}[/]")
         cm.resolve_smoke_screen()
@@ -776,13 +933,13 @@ class CombatScreen(ModalScreen[None]):
         self._finish_round(enemy, False)
 
     def _do_poison_strike(self) -> None:
-        """Rogue — Poison Strike: normal attack + 1d4 poison bonus on hit."""
         if self._guard():
             return
         from engine.combat import CombatManager
         state = self.engine.state
         enemy = state.active_enemies[0]
         cm = CombatManager(state)
+        self._set_active("4")
         self._start_round()
 
         player_first = self._roll_initiative_and_log(enemy)
@@ -816,42 +973,78 @@ class CombatScreen(ModalScreen[None]):
         state.player.temp_ac_bonus = 0
         state.in_combat = False
         state.active_enemies.clear()
-        state.player_approaching = False  # cancel approach so encounter mode doesn't re-trigger
+        state.player_approaching = False
         state.combat_log.append(f"Player fled! Took {flee_damage} damage escaping.")
         state.add_log(f"COMBAT: You fled the battle, taking {flee_damage} damage.")
         self._log(f"[yellow]🏃 You flee! -{flee_damage} HP[/]")
         self.refresh_parent()
         self.dismiss()
+        self._restore_input()
 
     def action_dismiss_combat(self) -> None:
-        """Close overlay without changing combat state."""
+        """Close the combat overlay.
+
+        If the player just won (in_aftermath is True), schedule the aftermath
+        narration to run in the narrative log after this screen closes.
+        Otherwise re-enable the narrative input directly.
+        """
+        in_aftermath = self.engine.state.in_aftermath
         self.refresh_parent()
         self.dismiss()
+        if in_aftermath:
+            self.app.run_worker(
+                self.app._auto_aftermath(),
+                exclusive=True,
+                name="aftermath",
+            )
+        else:
+            self._restore_input()
 
-    def _close_after_victory(self) -> None:
-        """Called after a brief delay so the player can read the victory message."""
-        self._write_victory_summary()
-        self.refresh_parent()
-        self.dismiss()
+    def _restore_input(self) -> None:
+        """Re-enable and focus the narrative input after this screen closes."""
+        try:
+            inp = self.app.query_one("#player-input")
+            inp.disabled = False
+            inp.focus()
+        except Exception:
+            pass
 
-    def _write_victory_summary(self) -> None:
-        """Write XP / loot / level-up summary to the combat log before closing."""
+    def _show_victory_screen(self) -> None:
+        """Show the victory summary in the actions column and prompt the player to press Esc."""
         state = self.engine.state
         p = state.player
-        self._log("[bold yellow]━━━━━━━━━  V I C T O R Y  ━━━━━━━━━[/]")
-        # Level-up is handled inside _award_xp_for_kill; surface any logged line
+
+        victory_lines = [
+            "[bold yellow]━━━  V I C T O R Y  ━━━[/]",
+            "",
+        ]
         for line in state.combat_log[-5:]:
-            if "Level up" in line or "XP" in line or "defeated" in line:
-                self._log(f"[dim green]{line}[/]")
-        self._log(
-            f"[dim]HP: {p.hp}/{p.max_hp}  │  XP: {p.experience}/{p.xp_to_next_level}"
-            f"  │  Gold: {p.gold}[/]"
-        )
+            if any(kw in line for kw in ("XP", "defeated", "Level up")):
+                victory_lines.append(f"[dim green]{line}[/]")
+        victory_lines += [
+            "",
+            f"[dim]HP: {p.hp}/{p.max_hp}[/]",
+            f"[dim]XP: {p.experience}/{p.xp_to_next_level}[/]",
+            f"[dim]Gold: {p.gold}[/]",
+            "",
+            "[bold green]Press [Esc] to return[/]",
+            "[dim]to your chronicle[/]",
+        ]
+
+        try:
+            self.query_one("#actions-content", Static).update(
+                "\n".join(victory_lines)
+            )
+        except Exception:
+            pass
+
+        self._set_status("✓ Victory — press Esc to continue", "bold green")
+        self.refresh_parent()
 
 
 # ── Formatting helpers ─────────────────────────────────────────────────────
 
-def _bar(current: int, maximum: int, width: int = 20) -> str:
+def _bar(current: int, maximum: int, width: int = 16) -> str:
     if maximum <= 0:
         return f"[dim]{'░' * width}[/dim]"
     ratio = current / maximum

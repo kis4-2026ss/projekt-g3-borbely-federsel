@@ -285,12 +285,21 @@ class ChronosApp(App):
             self._handle_player_death()
             return
 
-        # Auto-open the dedicated combat UI when a new combat starts
+        # Auto-open the dedicated combat UI when a new combat starts.
+        # For boss encounters, hold off — the narrative may contain the boss's
+        # final words; opening immediately would cover them before the player reads them.
         if not prior_in_combat and state.in_combat and state.active_enemies:
-            log_widget.write(
-                "[bold red]⚔ Combat started! Press [1]–[4] to act  [R] Flee[/]"
-            )
-            self._open_combat_screen()
+            if self._is_boss_combat():
+                log_widget.write("")
+                log_widget.write(
+                    "[bold red]⚔ A boss confronts you.[/]  "
+                    "[dim]Read above, then press [bold]^B[/bold] to open the combat screen.[/]"
+                )
+            else:
+                log_widget.write(
+                    "[bold red]⚔ Combat started! Press [bold]^B[/bold] to fight  [R] Flee[/]"
+                )
+                self._open_combat_screen()
 
         if self._should_refresh_summary():
             self.run_worker(
@@ -300,6 +309,15 @@ class ChronosApp(App):
             )
 
     # ── Helpers ───────────────────────────────────────────────────────────
+
+    def _is_boss_combat(self) -> bool:
+        """Return True if any active enemy matches a boss encounter template."""
+        state = self.engine.state
+        active_names = {e.name.lower() for e in state.active_enemies}
+        return any(
+            t.is_boss and t.enemy.name.lower() in active_names
+            for t in state.encounter_registry.values()
+        )
 
     def _record_heuristic_plot_points(
         self,
@@ -422,7 +440,42 @@ class ChronosApp(App):
         self.push_screen(CombatScreen(self.engine, self.update_ui))
 
     def on_screen_resume(self) -> None:
-        """Re-enable the narrative input whenever a modal is dismissed."""
+        """Fallback: re-enable narrative input when a non-combat modal closes.
+
+        Note: Textual's ScreenResume has bubble=False, so this only fires when
+        ChronosApp is used as an explicit Screen (rare). CombatScreen re-enables
+        input directly via _restore_input() / run_worker(_auto_aftermath) on
+        every dismiss path, so this is just a safety net for other modals.
+        """
+        try:
+            inp = self.query_one("#player-input", Input)
+            inp.disabled = False
+            inp.focus()
+        except Exception:
+            pass
+
+    async def _auto_aftermath(self) -> None:
+        """Auto-trigger the aftermath narration turn after combat victory.
+
+        Fires a single LLM turn in aftermath mode so the player sees loot,
+        XP, and the next hook without having to type anything first.
+        """
+        log = self.query_one("#game-log", RichLog)
+        try:
+            self.query_one("#player-input", Input).disabled = True
+        except Exception:
+            pass
+
+        state = self.engine.state
+        state.turn_count += 1
+        state.add_log("COMBAT: The enemy has been defeated.")
+        expired = state.tick_status_effects()
+        for name in expired:
+            log.write(f"[dim yellow]⏱ {name} faded.[/]")
+
+        await self.process_narrative("The enemy has been defeated.")
+        self.update_ui()
+
         try:
             inp = self.query_one("#player-input", Input)
             inp.disabled = False
