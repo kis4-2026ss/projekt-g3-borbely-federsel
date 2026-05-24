@@ -46,23 +46,65 @@ class PromptOrchestrator:
                 return json.load(f)
         return {}
 
-    # ── Scene classification ───────────────────────────────────────────────
+    # ── Activity and narrative mode ────────────────────────────────────────
 
-    def _get_scene_type(self, state: GameState) -> str:
-        """Derive the current narrative mode from game state."""
+    def _compute_activity(self, state: GameState) -> str:
+        """Determine what the player is doing right now.
+
+        Returns one of five activity categories:
+          combat    — active combat (state.in_combat True)
+          aftermath — one turn immediately after combat ends (state.in_aftermath True)
+          approach  — player has explicitly signalled intent to engage a threat
+          dialogue  — a known NPC is present at the current location
+          exploring — default; player is moving or looking around
+        """
         if state.in_combat:
             return "combat"
+        if state.in_aftermath:
+            return "aftermath"
+        if state.player_approaching:
+            return "approach"
         local_known_npcs = [
             npc for npc in state.npcs.values()
             if npc.location == state.current_location and npc.is_known
         ]
         if local_known_npcs:
             return "dialogue"
-        return "exploration"
+        return "exploring"
+
+    def _get_narrative_mode(self, state: GameState, activity: str) -> str:
+        """Derive the narrative mode from the current activity.
+
+        chronicle  — default exploration / dialogue; slow clock (4-5 turns/zone)
+        encounter  — player declared approach OR 5-turn zone backstop fires
+        combat     — in_combat is True; CombatScreen modal is active
+        aftermath  — one-turn mode immediately after combat ends
+
+        Critical change from the old implementation: encounter mode no longer
+        fires just because an unspawned encounter exists nearby. Only an explicit
+        player approach (set_player_approaching op) or the 5-turn backstop trigger it.
+        """
+        if activity in ("combat", "aftermath"):
+            return activity
+        if activity == "approach":
+            return "encounter"
+        # Hard backstop: 5 turns in a zone with pending encounters → force escalation
+        turns_at_loc = state.turn_count - state.location_entered_turn
+        pending_enc = [t for t in state.encounter_registry.values() if not t.spawned]
+        if pending_enc and turns_at_loc >= 5:
+            return "encounter"
+        return "chronicle"
 
     # ── Context assembly ───────────────────────────────────────────────────
 
-    def _get_lean_state(self, state: GameState) -> Dict[str, Any]:
+    def _get_lean_state(
+        self,
+        state: GameState,
+        narrative_mode: str = "",
+        phase_turn: int = 0,
+        activity: str = "exploring",
+        turns_in_activity: int = 0,
+    ) -> Dict[str, Any]:
         active_quests = {
             qid: {
                 "name": q.name,
@@ -169,24 +211,36 @@ class PromptOrchestrator:
 
         combat_log_tail = state.combat_log[-4:] if state.combat_log else None
 
-        # DM meta block — gives the LLM an explicit phase clock so it knows
-        # when to escalate without having to infer from the hot log.
+        # DM meta — explicit phase clocks so the LLM never has to guess.
+        # narrative_mode, phase_turn, activity, and turns_in_activity are pre-computed
+        # by build_payload. Fall back to computing here only when _get_lean_state is
+        # called directly (e.g. in tests).
+        _activity = activity or self._compute_activity(state)
+        _mode = narrative_mode or self._get_narrative_mode(state, _activity)
+        _phase_turn = phase_turn  # 0 when called without build_payload context
+
         turns_at_location = state.turn_count - state.location_entered_turn
+        turns_since_last_enc = state.turn_count - state.last_encounter_turn
+        active_quest_ids = set(state.quests.keys())
         pending_encounter_ids = [
             t.id for t in state.encounter_registry.values() if not t.spawned
         ]
-        active_quest_ids = set(state.quests.keys())
         pending_quest_encounters = [
             t.id for t in state.encounter_registry.values()
             if not t.spawned and t.quest_id in active_quest_ids
         ]
 
         dm_meta = {
+            "narrative_mode": _mode,                        # "chronicle"|"encounter"|"combat"|"aftermath"
+            "activity": _activity,                          # "exploring"|"dialogue"|"approach"|"combat"|"aftermath"
+            "turns_in_activity": turns_in_activity,         # turns spent in the current activity
+            "npc_exchanges_this_location": state.npc_exchanges_this_location,
+            "npc_exchanges_remaining": max(0, 4 - state.npc_exchanges_this_location),
+            "phase_turn": _phase_turn,                      # turns spent in current narrative_mode
             "turns_at_current_location": turns_at_location,
+            "turns_since_last_encounter": turns_since_last_enc,
             "pending_encounter_ids": pending_encounter_ids,
             "pending_quest_encounter_ids": pending_quest_encounters,
-            # Reminder: ESCALATE fires if turns_at_current_location >= 2 and
-            # pending_quest_encounters is non-empty, OR >= 2 regardless of encounters.
         }
 
         return {
@@ -244,9 +298,10 @@ class PromptOrchestrator:
 
     # ── System message assembly ────────────────────────────────────────────
 
-    def _build_system_message(self, scene_type: str) -> str:
+    def _build_system_message(self, narrative_mode: str) -> str:
         cfg = self.system_config
-        scene_guidance = cfg.get("scene_type_guidance", {}).get(scene_type, "")
+        # Mode-specific instruction block (chronicle_mode / encounter_mode / combat_mode / aftermath_mode)
+        mode_guidance = cfg.get(f"{narrative_mode}_mode", "")
 
         er = self.encounter_rules
         encounter_rules_text = "\n\n".join(
@@ -267,12 +322,10 @@ class PromptOrchestrator:
             "",
             f"PROTAGONIST LORE:\n{cfg.get('protagonist_lore', '')}",
             "",
-            f"NARRATIVE STYLE:\n{cfg.get('narrative_style', '')}",
+            f"PROSE RULES (apply in every mode):\n{cfg.get('prose_rules', '')}",
             "",
-            f"DM RULES:\n{cfg.get('dm_rules', '')}",
-            "",
-            f"CURRENT SCENE TYPE: {scene_type.upper()}",
-            f"SCENE GUIDANCE: {scene_guidance}",
+            f"CURRENT NARRATIVE MODE: {narrative_mode.upper()}",
+            f"MODE INSTRUCTIONS:\n{mode_guidance}",
             "",
             f"STATE RULES:\n{cfg.get('state_instruction', '')}",
             "",
@@ -309,21 +362,55 @@ class PromptOrchestrator:
     # ── Public API ─────────────────────────────────────────────────────────
 
     def build_payload(self, state: GameState, user_input: str) -> List[Dict[str, str]]:
-        scene_type = self._get_scene_type(state)
+        # ── Activity tracking ──────────────────────────────────────────────
+        activity = self._compute_activity(state)
+
+        # Per-activity turn clock: reset when the activity category changes.
+        if activity != state.current_activity:
+            state.activity_entered_turn = state.turn_count
+            state.current_activity = activity
+
+        # Dialogue exchange counter: increment every turn spent talking to an NPC.
+        if activity == "dialogue":
+            state.npc_exchanges_this_location += 1
+
+        turns_in_activity = state.turn_count - state.activity_entered_turn
+
+        # ── Narrative mode ────────────────────────────────────────────────
+        narrative_mode = self._get_narrative_mode(state, activity)
+
+        # Phase-change detection: reset the per-phase clock whenever the narrative
+        # mode transitions (chronicle→encounter, encounter→combat, etc.).
+        # last_narrative_mode="" on the first turn — no reset needed there.
+        if state.last_narrative_mode and narrative_mode != state.last_narrative_mode:
+            state.phase_entered_turn = state.turn_count
+        state.last_narrative_mode = narrative_mode
+        phase_turn = state.turn_count - state.phase_entered_turn
+
+        # ── Aftermath clearing ────────────────────────────────────────────
+        # Clear the aftermath flag AFTER this turn's lean_state is built so the
+        # LLM still receives aftermath mode for this turn, then resets to exploring.
+        aftermath_this_turn = state.in_aftermath and activity == "aftermath"
 
         context_payload = {
             "session_summary": state.session_summary or "(no session summary yet)",
-            "current_state": self._get_lean_state(state),
+            "current_state": self._get_lean_state(
+                state, narrative_mode, phase_turn, activity, turns_in_activity
+            ),
             "history": self._get_relevant_history(state, user_input),
             "recent_dialogue": state.log[-_RECENT_LOG_LINES:],
         }
+
+        # Clear aftermath flag after context is assembled (one turn only).
+        if aftermath_this_turn:
+            state.in_aftermath = False
         context_msg = (
             "CURRENT CONTEXT (JSON — read carefully before composing the next turn):\n"
             f"{json.dumps(context_payload, indent=2, default=str)}"
         )
 
         messages: List[Dict[str, str]] = [
-            {"role": "system", "content": self._build_system_message(scene_type)},
+            {"role": "system", "content": self._build_system_message(narrative_mode)},
             {"role": "system", "content": context_msg},
         ]
 

@@ -258,6 +258,7 @@ def _start_combat(state: GameState, change: Dict[str, Any]) -> str:
     state.active_enemies.append(enemy)
     state.in_combat = True
     state.combat_log.clear()
+    state.last_encounter_turn = state.turn_count  # reset random-encounter cooldown
 
     cm = CombatManager(state)
     p_init, e_init = cm.roll_initiative()
@@ -277,6 +278,8 @@ def _end_combat(state: GameState, change: Dict[str, Any]) -> str:
     outcome = change.get("outcome", "ended")
     state.active_enemies.clear()
     state.in_combat = False
+    state.in_aftermath = True            # one aftermath turn fires before returning to exploring
+    state.last_encounter_turn = state.turn_count
     return f"combat ended ({outcome})"
 
 
@@ -403,6 +406,7 @@ def _spawn_encounter(state: GameState, change: Dict[str, Any]) -> str:
     state.in_combat = True
     state.combat_log.clear()
     template.spawned = True
+    state.last_encounter_turn = state.turn_count  # reset random-encounter cooldown
 
     cm = CombatManager(state)
     p_init, e_init = cm.roll_initiative()
@@ -505,6 +509,16 @@ def _give_defined_item(state: GameState, change: Dict[str, Any]) -> str:
     return f"received: {item.name}{extra}"
 
 
+# ── Approach / activity ops ────────────────────────────────────────────────
+
+def _set_player_approaching(state: GameState, change: Dict[str, Any]) -> str:
+    """Signal that the player is moving toward or declaring intent to engage a known threat.
+    Sets state.player_approaching = True so the orchestrator transitions to encounter mode
+    on the next turn. Cleared automatically by move_to (player walks away)."""
+    state.player_approaching = True
+    return "player approaching known threat"
+
+
 # ── World / location ops ───────────────────────────────────────────────────
 
 def _move_to(state: GameState, change: Dict[str, Any]) -> str:
@@ -515,7 +529,9 @@ def _move_to(state: GameState, change: Dict[str, Any]) -> str:
     if name not in state.locations:
         state.locations[name] = Location(name=name, description="(Newly travelled-to area.)")
     state.current_location = name
-    state.location_entered_turn = state.turn_count  # reset scene clock
+    state.location_entered_turn = state.turn_count   # reset scene clock
+    state.player_approaching = False                 # travel cancels a declared approach
+    state.npc_exchanges_this_location = 0            # fresh dialogue budget at new location
     return f"moved to {name}"
 
 
@@ -739,6 +755,8 @@ _HANDLERS = {
     # npcs
     "add_npc": _add_npc,
     "update_npc_disposition": _update_npc_disposition,
+    # activity / approach
+    "set_player_approaching": _set_player_approaching,
 }
 
 
@@ -776,7 +794,7 @@ ENCOUNTER REGISTRY (preferred for named enemies — see ENCOUNTER & ITEM RULES)
 - {"op":"define_encounter","id":"<slug>","name":"<name>","description":"<approach text>","enemy_name":"<name>","enemy_hp":<int>,"enemy_ac":<int>,"enemy_attack_bonus":<int>,"enemy_damage_dice":"1d6","enemy_damage_bonus":<int>,"enemy_level":<int>,"xp_reward":<int>,"gold_reward":<int>,"item_rewards":["<name>"],"narrative_flavor":"<combat prose guidance>","defeat_condition":"defeat|soothe|outwit|endure","quest_id":"<id>|null","tags":["<keyword>"],"is_boss":<bool>}
   NOTE: xp_reward in encounter templates is unused — XP is auto-awarded by the combat system (25 + level*25) when an enemy dies. Use gold_reward and item_rewards for loot_encounter.
 - {"op":"spawn_encounter","id":"<slug>"}
-- {"op":"loot_encounter","id":"<slug>"}
+- {"op":"loot_encounter","id":"<slug>"}   ← emit this in AFTERMATH MODE for gold/items only; do NOT also emit award_xp — XP is auto-awarded by the combat engine when the enemy dies
 
 ITEM REGISTRY (for weapons, armor, and quest items with mechanical properties)
 - {"op":"define_item","id":"<slug>","name":"<name>","item_type":"weapon|armor|consumable|quest|lore","description":"<text>","value_gold":<int>,"damage_dice":"1d8","hit_bonus":<int>,"damage_type":"slashing|piercing|bludgeoning","ac_bonus":<int>,"heal_amount":<int>,"tags":["<keyword>"]}
@@ -804,5 +822,21 @@ QUESTS
 NPCS
 - {"op":"add_npc","name":"<name>","location":"<location>","disposition":<0-100>}
 - {"op":"update_npc_disposition","name":"<NPC name>","delta":<int>}
+
+ACTIVITY / APPROACH
+- {"op":"set_player_approaching"}
+  Emit this when the player's input signals explicit movement toward or intent to engage a
+  known threat: "I approach", "I walk toward", "I confront it", "Let's fight", "I go in",
+  "I charge", "I attack".
+  For INTELLIGENT encounter entities (is_boss:true or tagged construct/sapient/ancient):
+    Do NOT emit on the first or second exchange — those entities get up to 2 brief verbal
+    responses before combat. Emit set_player_approaching (then spawn_encounter) after the
+    second exchange OR the moment the player signals physical aggression or approach.
+  For MINOR enemies (goblins, wolves, bandits — is_boss:false, no special tags):
+    Emit immediately on any interaction. No dialogue; one physical reaction, then spawn.
+  Do NOT emit for abstract curiosity about the world or distant observation — only for
+  direct physical engagement or verbal escalation past the allowed exchange limit.
+  This transitions narrative_mode to "encounter" on the very next turn. The orchestrator
+  clears it automatically when the player uses move_to to leave the area.
 
 Only emit changes the narrative explicitly justifies. Return [] if nothing changed."""

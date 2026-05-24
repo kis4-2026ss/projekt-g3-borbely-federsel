@@ -8,14 +8,20 @@ load_dotenv()
 
 
 class AIClient:
-    """Async client for the GitHub Models API (OpenAI-compatible chat completions)."""
+    """Async client for any OpenAI-compatible chat completions endpoint.
+
+    Defaults to GitHub Models. To switch provider, set in .env:
+      LLM_API_URL=https://api.openai.com/v1/chat/completions
+      LLM_API_KEY=sk-...          (falls back to GITHUB_TOKEN if not set)
+      LLM_MODEL=gpt-4o-mini
+    """
 
     DEFAULT_URL = "https://models.inference.ai.azure.com/chat/completions"
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        self.api_key = api_key or os.getenv("GITHUB_TOKEN")
+        self.api_key = api_key or os.getenv("LLM_API_KEY") or os.getenv("GITHUB_TOKEN")
         self.model = model or os.getenv("LLM_MODEL", "gpt-4o-mini")
-        self.api_url = self.DEFAULT_URL
+        self.api_url = os.getenv("LLM_API_URL", self.DEFAULT_URL)
 
     async def generate_narrative(
         self,

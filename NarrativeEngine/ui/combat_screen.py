@@ -289,6 +289,7 @@ class CombatScreen(ModalScreen[None]):
         state.active_enemies = [e for e in state.active_enemies if e is not enemy]
         if not state.active_enemies:
             state.in_combat = False
+            state.in_aftermath = True   # trigger one aftermath narration turn
         state.add_log(f"COMBAT: {enemy.name} has been defeated! Gained {xp} XP.")
         state.combat_log.append(f"{enemy.name} defeated! +{xp} XP")
         self._log(f"[bold yellow]{enemy.name} has been defeated! +{xp} XP[/]")
@@ -815,6 +816,7 @@ class CombatScreen(ModalScreen[None]):
         state.player.temp_ac_bonus = 0
         state.in_combat = False
         state.active_enemies.clear()
+        state.player_approaching = False  # cancel approach so encounter mode doesn't re-trigger
         state.combat_log.append(f"Player fled! Took {flee_damage} damage escaping.")
         state.add_log(f"COMBAT: You fled the battle, taking {flee_damage} damage.")
         self._log(f"[yellow]🏃 You flee! -{flee_damage} HP[/]")

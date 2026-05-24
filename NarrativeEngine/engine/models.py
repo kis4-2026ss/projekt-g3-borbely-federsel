@@ -228,7 +228,16 @@ class GameState:
     last_rolls: List[DiceRoll] = field(default_factory=list)  # transient — not saved to disk
     enemy_attack_adv: int = 0    # transient — -1 dis / 0 normal / +1 adv for enemy; cleared after use
     mana_shield_value: int = 0   # transient — set by Mage's Mana Shield, consumed in resolve_enemy_attack
-    location_entered_turn: int = 0  # transient — turn on which the player last moved to a new location
+    location_entered_turn: int = 0       # transient — turn on which the player last moved to a new location
+    last_encounter_turn: int = 0         # transient — turn on which any combat last started (random cooldown)
+    chronicle_cycle_start_turn: int = 0  # transient — reset to turn_count after each AFTERMATH
+    last_narrative_mode: str = ""        # transient — previous mode, for phase-change detection
+    phase_entered_turn: int = 0          # transient — turn_count when current narrative_mode began
+    current_activity: str = "exploring"  # transient — current activity category
+    activity_entered_turn: int = 0       # transient — turn_count when current activity began
+    npc_exchanges_this_location: int = 0 # transient — dialogue exchanges at current location
+    player_approaching: bool = False     # transient — player signalled intent to engage a threat
+    in_aftermath: bool = False           # transient — one-turn aftermath flag after combat ends
 
     def add_log(self, message: str):
         self.log.append(message)
@@ -258,10 +267,19 @@ class GameState:
 
     def to_json(self) -> str:
         d = asdict(self)
-        d.pop("last_rolls", None)             # transient, never persisted
-        d.pop("enemy_attack_adv", None)       # transient
-        d.pop("mana_shield_value", None)      # transient
-        d.pop("location_entered_turn", None)  # transient
+        d.pop("last_rolls", None)                   # transient, never persisted
+        d.pop("enemy_attack_adv", None)             # transient
+        d.pop("mana_shield_value", None)            # transient
+        d.pop("location_entered_turn", None)        # transient
+        d.pop("last_encounter_turn", None)          # transient
+        d.pop("chronicle_cycle_start_turn", None)   # transient
+        d.pop("last_narrative_mode", None)          # transient
+        d.pop("phase_entered_turn", None)           # transient
+        d.pop("current_activity", None)             # transient
+        d.pop("activity_entered_turn", None)        # transient
+        d.pop("npc_exchanges_this_location", None)  # transient
+        d.pop("player_approaching", None)           # transient
+        d.pop("in_aftermath", None)                 # transient
         d.get("player", {}).pop("temp_ac_bonus", None)  # transient
         return json.dumps(d, indent=2)
 
@@ -313,10 +331,19 @@ class GameState:
             for iid, idata in d.pop("item_registry", {}).items()
         }
 
-        d.pop("last_rolls", None)             # not in save files, but guard anyway
-        d.pop("enemy_attack_adv", None)       # transient — guard for forward compat
-        d.pop("mana_shield_value", None)      # transient — guard for forward compat
-        d.pop("location_entered_turn", None)  # transient — guard for forward compat
+        d.pop("last_rolls", None)                   # not in save files, but guard anyway
+        d.pop("enemy_attack_adv", None)             # transient — guard for forward compat
+        d.pop("mana_shield_value", None)            # transient — guard for forward compat
+        d.pop("location_entered_turn", None)        # transient — guard for forward compat
+        d.pop("last_encounter_turn", None)          # transient — guard for forward compat
+        d.pop("chronicle_cycle_start_turn", None)   # transient — guard for forward compat
+        d.pop("last_narrative_mode", None)          # transient — guard for forward compat
+        d.pop("phase_entered_turn", None)           # transient — guard for forward compat
+        d.pop("current_activity", None)             # transient — guard for forward compat
+        d.pop("activity_entered_turn", None)        # transient — guard for forward compat
+        d.pop("npc_exchanges_this_location", None)  # transient — guard for forward compat
+        d.pop("player_approaching", None)           # transient — guard for forward compat
+        d.pop("in_aftermath", None)                 # transient — guard for forward compat
 
         return cls(
             player=player,
