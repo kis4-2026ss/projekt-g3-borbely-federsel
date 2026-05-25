@@ -22,6 +22,23 @@ class AIClient:
         self.api_key = api_key or os.getenv("LLM_API_KEY") or os.getenv("GITHUB_TOKEN")
         self.model = model or os.getenv("LLM_MODEL", "gpt-4o-mini")
         self.api_url = os.getenv("LLM_API_URL", self.DEFAULT_URL)
+        # Persistent client — reuses the TCP+TLS connection across calls.
+        # keepalive_expiry=15s: drop idle connections before the Azure server
+        # does, preventing stale-connection ReadTimeouts on the reused socket.
+        self._http_client = self._make_client()
+
+    @staticmethod
+    def _make_client() -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            limits=httpx.Limits(
+                max_keepalive_connections=1,
+                keepalive_expiry=15,   # seconds; Azure closes ~20s, so we drop first
+            ),
+        )
+
+    async def aclose(self) -> None:
+        """Close the persistent HTTP connection pool. Call on app shutdown."""
+        await self._http_client.aclose()
 
     async def generate_narrative(
         self,
@@ -37,7 +54,7 @@ class AIClient:
             "messages": payload,
             "model": self.model,
             "temperature": 0.8,
-            "max_tokens": 1200,
+            "max_tokens": 900,
             "top_p": 1,
         }
         if json_mode:
@@ -85,9 +102,12 @@ class AIClient:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
         }
-        async with httpx.AsyncClient() as client:
+        # Two attempts: first uses the persistent connection (fast path).
+        # On any connection/timeout error, recreate the client and retry once
+        # on a fresh socket — covers both stale-connection and transient failures.
+        for attempt in range(2):
             try:
-                response = await client.post(
+                response = await self._http_client.post(
                     self.api_url, headers=headers, json=data, timeout=45.0
                 )
                 if response.status_code != 200:
@@ -101,9 +121,21 @@ class AIClient:
                     if content:
                         return content.strip()
                 return "The ancient winds remain silent... (No response from AI)"
+            except (httpx.TimeoutException, httpx.RemoteProtocolError) as e:
+                if attempt == 0:
+                    # Likely a stale connection — drop it and try once more fresh.
+                    try:
+                        await self._http_client.aclose()
+                    except Exception:
+                        pass
+                    self._http_client = self._make_client()
+                    continue
+                detail = str(e).strip() or type(e).__name__
+                return f"ARCANE ERROR: Connection lost in the mists. ({detail})"
             except httpx.HTTPError as e:
                 detail = str(e).strip() or type(e).__name__
                 return f"ARCANE ERROR: Connection lost in the mists. ({detail})"
             except Exception as e:
                 detail = str(e).strip() or type(e).__name__
                 return f"ARCANE ERROR: {detail}"
+        return "ARCANE ERROR: All connection attempts failed."

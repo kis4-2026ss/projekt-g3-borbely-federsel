@@ -241,6 +241,7 @@ class GameState:
     player_approaching: bool = False     # transient — player signalled intent to engage a threat
     in_aftermath: bool = False           # transient — one-turn aftermath flag after combat ends
     enemies_defeated_since_rest: int = 0  # transient — 2+ = rest available (boss kill counts as 2)
+    player_acts_first: bool = True       # transient — False when enemy won initiative on combat start
 
     def add_log(self, message: str):
         self.log.append(message)
@@ -284,6 +285,7 @@ class GameState:
         d.pop("player_approaching", None)           # transient
         d.pop("in_aftermath", None)                 # transient
         d.pop("enemies_defeated_since_rest", None)  # transient
+        d.pop("player_acts_first", None)            # transient
         d.get("player", {}).pop("temp_ac_bonus", None)  # transient
         return json.dumps(d, indent=2)
 
@@ -349,9 +351,10 @@ class GameState:
         d.pop("player_approaching", None)           # transient — guard for forward compat
         d.pop("in_aftermath", None)                 # transient — guard for forward compat
         d.pop("enemies_defeated_since_rest", None)  # transient — guard for forward compat
+        d.pop("player_acts_first", None)            # transient — guard for forward compat
         d.pop("last_rest_turn", None)               # transient — guard for old saves
 
-        return cls(
+        state = cls(
             player=player,
             world=world,
             story_history=history,
@@ -363,6 +366,27 @@ class GameState:
             item_registry=item_registry,
             **d,
         )
+
+        # ── Post-load transient field initialisation ──────────────────────
+        # Transient clock fields default to 0, but the orchestrator computes
+        # scene-pressure deltas as (turn_count - field).  Leaving them at 0
+        # would make every delta read as turn_count (e.g. 52), instantly
+        # triggering the "5 turns → force encounter" backstop on the very
+        # first post-load narrative turn.  Reset them all to turn_count so
+        # every delta starts at 0.
+        state.location_entered_turn      = state.turn_count
+        state.last_encounter_turn        = state.turn_count
+        state.phase_entered_turn         = state.turn_count
+        state.activity_entered_turn      = state.turn_count
+        state.chronicle_cycle_start_turn = state.turn_count
+
+        # Stale combat log: only meaningful during active combat.  Clear it
+        # on load when not in combat so the LLM doesn't see old fight lines
+        # as current context during exploration.
+        if not state.in_combat:
+            state.combat_log.clear()
+
+        return state
 
     def save_to_file(self, filename: str = "savegame.json"):
         """Atomic save: write to a temp file, then replace the target."""

@@ -41,6 +41,12 @@
         "battle_cry": 2
       }
     },
+    "reaction": {
+      "id": "guard",
+      "name": "Guard",
+      "cost": 1,
+      "desc": "Brace against the blow. Reduce damage by STR mod + 2."
+    },
     "loot_profile": {
       "weapon_type": "sword or axe",
       "weapon_examples": ["Aurelian War Sword", "Ironbound Battle Axe", "Cleaver of the Last Gate"],
@@ -88,10 +94,15 @@
       "regen_per_round": 0,
       "start_at_max": true,
       "ability_costs": {
-        "arcane_bolt": 1,
         "mana_shield": 1,
         "arcane_surge": 3
       }
+    },
+    "reaction": {
+      "id": "mana_intercept",
+      "name": "Mana Intercept",
+      "cost": 1,
+      "desc": "Conjure a barrier. Absorb up to INT×2+4 damage."
     },
     "loot_profile": {
       "weapon_type": "staff or arcane focus",
@@ -143,6 +154,12 @@
         "flurry": 1,
         "ki_strike": 3
       }
+    },
+    "reaction": {
+      "id": "ki_redirect",
+      "name": "Ki Redirect",
+      "cost": 1,
+      "desc": "Redirect the strike's force. Take only half damage."
     },
     "loot_profile": {
       "weapon_type": "staff or bracers",
@@ -197,6 +214,12 @@
         "poison_strike": 1,
         "shadow_step": 3
       }
+    },
+    "reaction": {
+      "id": "shadow_slip",
+      "name": "Shadow Slip",
+      "cost": 1,
+      "desc": "DEX check vs attack total — success means zero damage."
     },
     "loot_profile": {
       "weapon_type": "daggers or short sword",

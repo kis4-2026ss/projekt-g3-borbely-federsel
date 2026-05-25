@@ -121,51 +121,78 @@ class CombatManager:
 
         return rolls
 
-    def resolve_enemy_attack(self, enemy: Enemy) -> List[DiceRoll]:
-        """Enemy counter-attacks player.
+    def resolve_enemy_attack_roll(self, enemy: Enemy) -> DiceRoll:
+        """Roll the enemy's attack and return it. Does NOT apply damage.
 
-        D&D 5e: armor only affects the player's AC (chance to be hit) -- it
-        does not reduce damage. A natural 20 is a critical hit (damage dice
-        doubled), a natural 1 is an automatic miss.
+        Consumes the enemy_attack_adv modifier (set by Evade / Smoke Screen) on
+        each call, so call this exactly once per round. D&D 5e: natural 20 =
+        critical hit, natural 1 = automatic miss.
         """
         player = self.state.player
-        rolls: List[DiceRoll] = []
-
-        # Consume the advantage modifier set by Evade — reset immediately after use
         adv = self.state.enemy_attack_adv
         self.state.enemy_attack_adv = 0
-
-        attack_roll = dice.roll(
+        return dice.roll(
             "1d20", modifier=enemy.attack_bonus, dc=player.ac,
             label=f"{enemy.name} attacks", roll_type="attack",
             advantage=adv,
         )
+
+    def resolve_enemy_damage(
+        self,
+        enemy: Enemy,
+        attack_roll: DiceRoll,
+        damage_multiplier: float = 1.0,
+        flat_reduction: int = 0,
+    ) -> DiceRoll:
+        """Roll and apply enemy damage after a successful attack.
+
+        attack_roll must have attack_roll.success == True (caller's responsibility).
+
+        Keyword args:
+            damage_multiplier — scale factor applied to the raw roll total.
+                0.5 halves damage (Ki Redirect). 1.0 = normal.
+            flat_reduction    — subtracted after scaling, before the minimum-1
+                floor (Guard). Mana Shield absorption is handled here too.
+        """
+        player = self.state.player
+        damage_roll = dice.roll(
+            enemy.damage_dice, modifier=enemy.damage_bonus,
+            label=f"{enemy.name} damage", roll_type="damage",
+            crit=attack_roll.is_critical,
+        )
+        actual_damage = max(1, int(damage_roll.total * damage_multiplier) - flat_reduction)
+        actual_damage = max(0, actual_damage)
+
+        # Mage's Mana Shield: absorb remaining damage before it reaches HP
+        if self.state.mana_shield_value > 0:
+            absorbed = min(self.state.mana_shield_value, actual_damage)
+            actual_damage = max(0, actual_damage - absorbed)
+            self.state.mana_shield_value = 0
+            self.state.combat_log.append(f"Mana Shield absorbs {absorbed} damage!")
+
+        player.take_damage(actual_damage)
+        crit_note = " CRITICAL HIT!" if attack_roll.is_critical else ""
+        self.state.combat_log.append(
+            f"{enemy.name} hits player for {actual_damage} dmg{crit_note}"
+            f" (roll {attack_roll.total} vs AC {player.ac})"
+        )
+        return damage_roll
+
+    def resolve_enemy_attack(self, enemy: Enemy) -> List[DiceRoll]:
+        """Combined backward-compatible path (callers that don't need reactions).
+
+        Rolls attack + damage (if hit) in one call and applies HP loss. Mana
+        Shield absorption is handled inside resolve_enemy_damage.
+        """
+        player = self.state.player
+        rolls: List[DiceRoll] = []
+
+        attack_roll = self.resolve_enemy_attack_roll(enemy)
         rolls.append(attack_roll)
 
         if attack_roll.success:
-            damage_roll = dice.roll(
-                enemy.damage_dice, modifier=enemy.damage_bonus,
-                label=f"{enemy.name} damage", roll_type="damage",
-                crit=attack_roll.is_critical,
-            )
+            damage_roll = self.resolve_enemy_damage(enemy, attack_roll)
             rolls.append(damage_roll)
-
-            actual_damage = max(1, damage_roll.total)
-            # Mage's Mana Shield: absorb incoming damage before it lands
-            if self.state.mana_shield_value > 0:
-                absorbed = min(self.state.mana_shield_value, actual_damage)
-                actual_damage = max(0, actual_damage - absorbed)
-                self.state.mana_shield_value = 0
-                self.state.combat_log.append(
-                    f"Mana Shield absorbs {absorbed} damage!"
-                )
-            player.take_damage(actual_damage)
-
-            crit_note = " CRITICAL HIT!" if attack_roll.is_critical else ""
-            self.state.combat_log.append(
-                f"{enemy.name} hits player for {actual_damage} dmg{crit_note}"
-                f" (roll {attack_roll.total} vs AC {player.ac})"
-            )
         else:
             fumble_note = " (natural 1 - fumble)" if attack_roll.is_fumble else ""
             self.state.combat_log.append(
@@ -174,6 +201,52 @@ class CombatManager:
             )
 
         return rolls
+
+    # ── Reaction effect helpers ────────────────────────────────────────────
+
+    def resolve_reaction_guard(self, enemy: Enemy, attack_roll: DiceRoll) -> DiceRoll:
+        """Fighter Guard: roll damage, reduce by STR mod + 2 (min 1 reduction)."""
+        str_mod = self.state.player.stat_mod("strength")
+        reduction = max(1, str_mod + 2)
+        return self.resolve_enemy_damage(enemy, attack_roll, flat_reduction=reduction)
+
+    def resolve_reaction_mana_intercept(self, enemy: Enemy, attack_roll: DiceRoll) -> DiceRoll:
+        """Mage Mana Intercept: pre-load a temporary Mana Shield then resolve damage."""
+        int_mod = self.state.player.stat_mod("intelligence")
+        shield = int_mod * 2 + 4
+        # Temporarily set the shield value; resolve_enemy_damage will drain it.
+        self.state.mana_shield_value = max(self.state.mana_shield_value, shield)
+        return self.resolve_enemy_damage(enemy, attack_roll)
+
+    def resolve_reaction_ki_redirect(self, enemy: Enemy, attack_roll: DiceRoll) -> DiceRoll:
+        """Monk Ki Redirect: take half damage (rounded down)."""
+        return self.resolve_enemy_damage(enemy, attack_roll, damage_multiplier=0.5)
+
+    def resolve_reaction_shadow_slip(
+        self, enemy: Enemy, attack_roll: DiceRoll
+    ) -> Tuple[DiceRoll, DiceRoll, bool]:
+        """Rogue Shadow Slip: DEX check vs attack total. Evade on success (0 damage).
+
+        Returns (damage_roll, dex_check_roll, evaded).
+        damage_roll is always present but total=0 when evaded.
+        """
+        dex_mod = self.state.player.stat_mod("dexterity")
+        check = dice.roll(
+            "1d20", modifier=dex_mod, dc=attack_roll.total,
+            label="Shadow Slip", roll_type="check",
+        )
+        self.state.last_rolls.append(check)
+        if check.success:
+            # Build a zero-damage placeholder roll so the UI can log something
+            evade_roll = dice.roll(
+                "1d1", modifier=0,
+                label=f"{enemy.name} damage (evaded)", roll_type="damage",
+            )
+            # Override total to 0 — dice.roll with 1d1 gives minimum 1, so fix it.
+            evade_roll.total = 0
+            return evade_roll, check, True
+        damage_roll = self.resolve_enemy_damage(enemy, attack_roll)
+        return damage_roll, check, False
 
     def resolve_full_round(self, enemy: Enemy) -> List[DiceRoll]:
         """One full combat round, ordered by initiative.

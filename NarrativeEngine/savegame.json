@@ -8,7 +8,9 @@
       "Rusted Shortsword",
       "Patched Leather",
       "Health Potion",
-      "Traveler's Cloak"
+      "Traveler's Cloak",
+      "Ironclad Sword",
+      "Chainmail"
     ],
     "lineage": "Aurelian Bloodline",
     "bloodline_resonance": 0,
@@ -69,7 +71,7 @@
         "elowen",
         "spire"
       ],
-      "timestamp": "2026-05-25T13:45:56.915302"
+      "timestamp": "2026-05-25T16:01:21.883546"
     }
   ],
   "session_summary": "",

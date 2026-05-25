@@ -273,7 +273,9 @@ class PromptOrchestrator:
 
         deep_recall: List[Dict[str, Any]] = []
         if terms:
-            for pp in history:
+            # Iterate newest-first so the most recent matching events fill the
+            # cap before older ones with the same tags crowd them out.
+            for pp in reversed(history):
                 if pp in background:
                     continue
                 pp_terms: set = set()
@@ -410,7 +412,7 @@ class PromptOrchestrator:
             state.in_aftermath = False
         context_msg = (
             "CURRENT CONTEXT (JSON — read carefully before composing the next turn):\n"
-            f"{json.dumps(context_payload, indent=2, default=str)}"
+            f"{json.dumps(context_payload, separators=(',', ':'), default=str)}"
         )
 
         messages: List[Dict[str, str]] = [

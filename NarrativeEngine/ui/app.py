@@ -164,6 +164,13 @@ class ChronosApp(App):
     def on_mount(self) -> None:
         self.run_worker(self._init_game(), exclusive=True, name="init")
 
+    async def on_unmount(self) -> None:
+        """Close the persistent HTTP connection pool cleanly on exit."""
+        try:
+            await self.ai_client.aclose()
+        except Exception:
+            pass
+
     async def _init_game(self) -> None:
         from ui.intro_screen import IntroScreen
         result = await self.push_screen_wait(IntroScreen())
@@ -174,6 +181,7 @@ class ChronosApp(App):
                 # Loaded save may predate the archetype system — prompt if unset
                 if not self.engine.state.player.archetype:
                     await self._show_class_select()
+                self._replay_log_to_widget(log)
                 self.update_ui()
                 self.query_one("#player-input").focus()
                 log.write("[bold green]SYSTEM: Chronicle restored from disk.[/]")
@@ -208,9 +216,15 @@ class ChronosApp(App):
         command = event.value.strip()
         if not command:
             return
+
+        inp = event.input
+        inp.value = ""
+        # Disable the field immediately to prevent double-submissions while
+        # the LLM is thinking. Re-enabled in the finally block below.
+        inp.disabled = True
+
         log = self.query_one("#game-log", RichLog)
         log.write(f"\n[yellow]> {command}[/]")
-        event.input.value = ""
 
         self.engine.state.turn_count += 1
         self.engine.state.add_log(f"PLAYER: {command}")
@@ -219,8 +233,46 @@ class ChronosApp(App):
         for name in expired:
             log.write(f"[dim yellow]⏱ {name} faded.[/]")
 
-        await self.process_narrative(command)
-        self.update_ui()
+        # Animated wait indicator — updates the key-hints bar with elapsed seconds.
+        # The task runs concurrently with the HTTP await on the same event loop,
+        # so it ticks even while process_narrative is suspended awaiting the LLM.
+        import asyncio as _asyncio
+        _HINTS_NORMAL = (
+            "^A Attack  ^B Combat  ^E Inventory  ^U Use Item  ^R Rest"
+            "  ^S Save  ^L Load  ^D Dark  ^Q Quit"
+        )
+        _start = _asyncio.get_running_loop().time()
+        _ticking = True
+
+        async def _tick_hints():
+            _dots = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+            _i = 0
+            while _ticking:
+                elapsed = int(_asyncio.get_running_loop().time() - _start)
+                spin = _dots[_i % len(_dots)]
+                try:
+                    self.query_one("#key-hints-bar", Static).update(
+                        f"  [bold yellow]{spin} Narrator thinking… {elapsed}s[/]"
+                    )
+                except Exception:
+                    pass
+                _i += 1
+                await _asyncio.sleep(0.1)
+
+        _tick_task = _asyncio.create_task(_tick_hints())
+        try:
+            await self.process_narrative(command)
+            self.update_ui()
+        finally:
+            _ticking = False
+            _tick_task.cancel()
+            inp.disabled = False
+            inp.placeholder = "What do you do? (e.g., 'examine the gears')"
+            try:
+                self.query_one("#key-hints-bar", Static).update(_HINTS_NORMAL)
+            except Exception:
+                pass
+            inp.focus()
 
     async def process_narrative(self, user_input: str) -> None:
         state = self.engine.state
@@ -304,7 +356,8 @@ class ChronosApp(App):
                 log_widget.write(
                     "[bold red]⚔ Combat started! Press [bold]^B[/bold] to fight  [R] Flee[/]"
                 )
-                self._open_combat_screen()
+                # No auto-open — player presses ^B when ready, same as boss flow,
+                # so they can read the encounter narrative before the modal opens.
 
         if self._should_refresh_summary():
             self.run_worker(
@@ -331,32 +384,66 @@ class ChronosApp(App):
         user_input: str,
     ) -> List[str]:
         """Record automatic plot points for travel and quest-status changes.
-        Returns the event texts so the caller can surface them in the log."""
+
+        Deduplicates against the last 3 PlotPoints so that when the LLM
+        already emitted a matching plot_point field, the heuristic doesn't
+        create a second identical entry consuming cold-tier bandwidth.
+
+        Returns the event texts so the caller can surface them in the log.
+        """
         state = self.engine.state
+        recent_events = {pp.event for pp in state.story_history[-3:]}
         events: List[str] = []
+
         if state.current_location != prior_location:
             event_text = (
                 f"Travelled from {prior_location} to {state.current_location}"
             )
-            state.record_choice(
-                event=event_text,
-                choice=user_input,
-                tags=["travel", _slug(prior_location), _slug(state.current_location)],
-            )
-            events.append(event_text)
+            if event_text not in recent_events:
+                state.record_choice(
+                    event=event_text,
+                    choice=user_input,
+                    tags=["travel", _slug(prior_location), _slug(state.current_location)],
+                )
+                events.append(event_text)
+
         for qid, q in state.quests.items():
             old_status = prior_quest_status.get(qid)
             if old_status and old_status != q.status:
                 event_text = (
                     f"Quest '{q.name}' status: {old_status} → {q.status}"
                 )
-                state.record_choice(
-                    event=event_text,
-                    choice=user_input,
-                    tags=["quest", q.status, qid],
-                )
-                events.append(event_text)
+                if event_text not in recent_events:
+                    state.record_choice(
+                        event=event_text,
+                        choice=user_input,
+                        tags=["quest", q.status, qid],
+                    )
+                    events.append(event_text)
+
         return events
+
+    def _replay_log_to_widget(self, log_widget: RichLog, n: int = 20) -> None:
+        """Replay the last n state.log entries into the game log after a load.
+
+        Gives the player immediate orientation — they can see recent narrator
+        prose, their last commands, and any combat/system messages without
+        having to remember where they left off.
+        """
+        entries = self.engine.state.log[-n:]
+        if not entries:
+            return
+        log_widget.write("")
+        log_widget.write("[dim]──────────── Chronicle Restored ────────────[/]")
+        for line in entries:
+            if line.startswith("PLAYER: "):
+                log_widget.write(f"[yellow]> {line[len('PLAYER: '):]}[/]")
+            elif line.startswith("NARRATOR: "):
+                log_widget.write(line[len("NARRATOR: "):])
+            else:
+                log_widget.write(f"[dim cyan]{line}[/]")
+        log_widget.write("[dim]────────────────────────────────────────────[/]")
+        log_widget.write("")
 
     def _should_refresh_summary(self) -> bool:
         s = self.engine.state
@@ -407,9 +494,18 @@ class ChronosApp(App):
             log.write(f"[bold red]SYSTEM: Save failed: {e}[/]")
 
     def action_load_game(self) -> None:
+        """Dispatch to an async worker so we can await _show_class_select if needed."""
+        self.run_worker(self._do_load_game(), exclusive=True, name="load")
+
+    async def _do_load_game(self) -> None:
         log = self.query_one("#game-log", RichLog)
         try:
             self.engine.load_game()
+            # Guard for saves that predate the archetype system (same check
+            # as the startup path in _init_game).
+            if not self.engine.state.player.archetype:
+                await self._show_class_select()
+            self._replay_log_to_widget(log)
             self.update_ui()
             log.write("[bold green]SYSTEM: Chronicle restored from disk.[/]")
         except IncompatibleSaveError as e:
@@ -528,8 +624,15 @@ class ChronosApp(App):
             pass
 
     async def action_quick_attack(self) -> None:
-        """Press 'a' during combat to immediately send an attack command."""
+        """Press 'a' during combat to immediately send an attack command.
+
+        Blocked when the CombatScreen modal is already open — that screen
+        manages its own round loop and a parallel LLM call would desync state.
+        """
         if self._is_dead():
+            return
+        from ui.combat_screen import CombatScreen
+        if isinstance(self.screen, CombatScreen):
             return
         state = self.engine.state
         if not state.in_combat or not state.active_enemies:

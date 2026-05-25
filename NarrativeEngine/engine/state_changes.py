@@ -97,6 +97,10 @@ def _equip_weapon(state: GameState, change: Dict[str, Any]) -> str:
     hit_bonus = _coerce_int(change.get("hit_bonus", 0), field="hit_bonus")
     damage_type = change.get("damage_type", "slashing")
     description = change.get("description", "")
+    # Ensure the item is in inventory — equip_weapon may be used for new
+    # items the LLM didn't route through give_defined_item.
+    if name.strip() not in state.player.inventory:
+        state.player.inventory.append(name.strip())
     state.player.equipped_weapon = Weapon(
         name=name.strip(),
         damage_dice=damage_dice if isinstance(damage_dice, str) else "1d6",
@@ -113,6 +117,10 @@ def _equip_armor(state: GameState, change: Dict[str, Any]) -> str:
         raise ValueError("'name' must be a non-empty string")
     ac_bonus = _coerce_int(change.get("ac_bonus", 0), field="ac_bonus")
     description = change.get("description", "")
+    # Ensure the item is in inventory — equip_armor may be used for new
+    # items the LLM didn't route through give_defined_item.
+    if name.strip() not in state.player.inventory:
+        state.player.inventory.append(name.strip())
     state.player.equipped_armor = Armor(
         name=name.strip(),
         ac_bonus=ac_bonus,
@@ -286,6 +294,7 @@ def _start_combat(state: GameState, change: Dict[str, Any]) -> str:
     state.last_rolls.extend([p_init, e_init])
 
     player_first = p_init.total >= e_init.total
+    state.player_acts_first = player_first  # CombatScreen reads this in on_mount
     order = "You act first." if player_first else f"{enemy_name.strip()} acts first."
     state.combat_log.append(f"Combat started. {order}")
 
@@ -434,6 +443,7 @@ def _spawn_encounter(state: GameState, change: Dict[str, Any]) -> str:
     state.last_rolls.extend([p_init, e_init])
 
     player_first = p_init.total >= e_init.total
+    state.player_acts_first = player_first  # CombatScreen reads this in on_mount
     order = "You act first." if player_first else f"{enemy.name} acts first."
     state.combat_log.append(f"Combat started. {order}")
     return f"encounter spawned: {template.name} (HP:{enemy.hp} AC:{enemy.ac}) | {order}"
@@ -447,6 +457,17 @@ def _loot_encounter(state: GameState, change: Dict[str, Any]) -> str:
     template = state.encounter_registry.get(enc_id)
     if template is None:
         raise ValueError(f"No encounter defined with id '{enc_id}'")
+    # Guard: only distribute loot for encounters that were actually spawned and
+    # fought.  Without this, the LLM can accidentally emit loot_encounter with
+    # a boss's encounter id during the aftermath of an unrelated start_combat
+    # fight (as happened when a feral beast gave out the Weeping Guardian's
+    # Solar Crest).  If the LLM tries this, apply_changes catches the
+    # ValueError and surfaces it as a dim-red warning instead of crashing.
+    if not template.spawned:
+        raise ValueError(
+            f"Encounter '{enc_id}' has not been spawned — cannot distribute its loot. "
+            "For inline enemies spawned via start_combat, use add_item and add_gold directly."
+        )
 
     # XP is auto-awarded by CombatManager.resolve_full_round when the enemy dies.
     # loot_encounter handles gold and items only.

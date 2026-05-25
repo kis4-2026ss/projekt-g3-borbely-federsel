@@ -161,6 +161,8 @@ class CombatScreen(ModalScreen[None]):
         Binding("5",       "slot5",          "5 Action",    priority=True, show=False),
         Binding("ctrl+u",  "use_item",       "^U Use Item", priority=True, show=False),
         Binding("r",       "flee",           "R Flee",      priority=True, show=False),
+        Binding("v",       "react",          "V React",     priority=True, show=False),
+        Binding("n",       "skip_reaction",  "N Skip",      priority=True, show=False),
         Binding("escape",  "dismiss_combat", "Esc Close",   show=False),
     ]
 
@@ -173,6 +175,9 @@ class CombatScreen(ModalScreen[None]):
         self._action_db: Dict = {}            # raw JSON data
         self._actions: List[_ActionEntry] = []  # merged universal + archetype list
         self._round_in_progress: bool = False # prevents double-fire during async delays
+        self._reaction_pending: bool = False  # True while waiting for V/N reaction input
+        self._reaction_choice: str = ""       # "react" | "skip"
+        self._reaction_event: Optional[asyncio.Event] = None  # set by on_key to unblock _prompt_reaction
         self._load_actions()
 
     # ── Action registry ───────────────────────────────────────────────────
@@ -223,6 +228,37 @@ class CombatScreen(ModalScreen[None]):
         if not state.combat_log:
             log.write("[italic dim]The battle begins…[/]")
         self._refresh_panels()
+
+        # If the enemy won initiative, fire their opening attack immediately.
+        if not state.player_acts_first and state.active_enemies:
+            self.run_worker(
+                self._opening_enemy_attack(),
+                exclusive=True,
+                name="opening-attack",
+            )
+
+    async def _opening_enemy_attack(self) -> None:
+        """Fire the enemy's opening salvo when they won initiative on combat start.
+
+        Resets player_acts_first → True immediately so re-opening this screen
+        (e.g. after Esc → ^B) doesn't fire the opening attack a second time.
+        """
+        from engine.combat import CombatManager
+        state = self.engine.state
+        if not state.active_enemies:
+            return
+        state.player_acts_first = True  # consume the flag — one shot only
+        self._round_in_progress = True
+        try:
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            await asyncio.sleep(_PACE_ANNOUNCE)
+            self._log(f"[bold red]⚡ {enemy.name} strikes first![/]")
+            died = await self._do_enemy_counter(cm, enemy, initial_pause=False)
+            if not died:
+                self._refresh_panels()
+        finally:
+            self._round_in_progress = False
 
     # ── Rendering ─────────────────────────────────────────────────────────
 
@@ -509,20 +545,87 @@ class CombatScreen(ModalScreen[None]):
         return player_first
 
     async def _do_enemy_counter(self, cm, enemy, initial_pause: bool = True) -> bool:
-        """Run enemy counter-attack with pacing. Returns True if player died.
+        """Run enemy counter-attack with pacing and optional reaction window.
 
-        initial_pause=True (default) waits _PACE_BETWEEN before enemy rolls — used
-        when the player acted first and we need a dramatic beat before the counter.
-        Pass initial_pause=False when the enemy already went first (initiative lost)
-        so we don't double-pause after player's counter-strike.
+        Returns True if player died.
+
+        initial_pause=True (default) waits _PACE_BETWEEN before enemy rolls —
+        used when the player acted first and we need a dramatic beat before the
+        counter. Pass initial_pause=False when the enemy is striking first.
+
+        Two-phase flow:
+          1. Roll the attack and display it.
+          2. If it hits, offer a reaction window before damage lands.
+          3. Roll and apply damage (possibly modified by the chosen reaction).
         """
         if initial_pause:
             await asyncio.sleep(_PACE_BETWEEN)
-        enemy_rolls = cm.resolve_enemy_attack(enemy)
-        for r in enemy_rolls:
-            self._log(_format_roll_line(r))
-            await asyncio.sleep(_PACE_ROLL)
-        if self.engine.state.player.hp <= 0:
+
+        # Phase 1: attack roll only — no damage yet
+        attack_roll = cm.resolve_enemy_attack_roll(enemy)
+        self._log(_format_roll_line(attack_roll))
+        await asyncio.sleep(_PACE_ROLL)
+
+        if not attack_roll.success:
+            # Miss — log it and move on, no reaction needed
+            fumble_note = " (natural 1 — fumble!)" if attack_roll.is_fumble else ""
+            self.engine.state.combat_log.append(
+                f"{enemy.name} misses player{fumble_note}"
+                f" (roll {attack_roll.total} vs AC {self.engine.state.player.ac})"
+            )
+            return False
+
+        # Phase 2: check for a usable reaction before applying damage
+        state = self.engine.state
+        reaction_def = _get_reaction_def(state.player.archetype)
+        can_react = (
+            reaction_def is not None
+            and self._can_afford_reaction(reaction_def["cost"])
+        )
+        if can_react:
+            choice = await self._prompt_reaction(attack_roll, reaction_def)
+        else:
+            choice = "skip"
+
+        # Phase 3: apply damage (possibly modified by reaction)
+        if choice == "react" and reaction_def:
+            self._spend_resource(reaction_def["cost"])
+            reaction_id = reaction_def["id"]
+            if reaction_id == "guard":
+                reduction = max(1, state.player.stat_mod("strength") + 2)
+                dmg_roll = cm.resolve_reaction_guard(enemy, attack_roll)
+                self._log(_format_roll_line(dmg_roll))
+                self._log(f"[cyan]🛡 Guard absorbs {reduction} damage![/]")
+            elif reaction_id == "mana_intercept":
+                int_mod = state.player.stat_mod("intelligence")
+                shield = int_mod * 2 + 4
+                dmg_roll = cm.resolve_reaction_mana_intercept(enemy, attack_roll)
+                self._log(_format_roll_line(dmg_roll))
+                self._log(f"[blue]🔮 Mana Intercept — up to {shield} damage absorbed![/]")
+            elif reaction_id == "ki_redirect":
+                dmg_roll = cm.resolve_reaction_ki_redirect(enemy, attack_roll)
+                self._log(_format_roll_line(dmg_roll))
+                self._log("[cyan]🌀 Ki Redirect — force turned aside, half damage![/]")
+            elif reaction_id == "shadow_slip":
+                dmg_roll, check_roll, evaded = cm.resolve_reaction_shadow_slip(enemy, attack_roll)
+                self._log(_format_roll_line(check_roll))
+                if evaded:
+                    self._log("[bold cyan]👤 Shadow Slip — you vanish from the path of the blow![/]")
+                else:
+                    self._log(_format_roll_line(dmg_roll))
+                    self._log("[red]Shadow Slip failed — the blow lands.[/]")
+            else:
+                # Fallback for unknown reaction id
+                dmg_roll = cm.resolve_enemy_damage(enemy, attack_roll)
+                self._log(_format_roll_line(dmg_roll))
+        else:
+            # Normal damage path
+            dmg_roll = cm.resolve_enemy_damage(enemy, attack_roll)
+            self._log(_format_roll_line(dmg_roll))
+        await asyncio.sleep(_PACE_ROLL)
+
+        self._refresh_panels()
+        if state.player.hp <= 0:
             self._log("[bold red]You have fallen in battle.[/]")
             self._clear_active()
             self._refresh_panels()
@@ -577,6 +680,89 @@ class CombatScreen(ModalScreen[None]):
                 f"You: {p.hp}/{p.max_hp} HP",
                 "white",
             )
+
+    # ── Reaction helpers ──────────────────────────────────────────────────
+
+    def _can_afford_reaction(self, cost: int) -> bool:
+        """Return True if the player has enough resource for the reaction cost."""
+        if cost <= 0:
+            return True
+        p = self.engine.state.player
+        if p.max_combat_resource <= 0:
+            return False  # archetype has no resource, can't pay
+        return p.combat_resource >= cost
+
+    async def _prompt_reaction(self, attack_roll, reaction_def: dict) -> str:
+        """Show a reaction prompt and wait for V (react) or N (skip).
+
+        Uses asyncio.Event.wait() — the correct mechanism for suspending a
+        coroutine while keeping the asyncio event loop fully active. The loop
+        stays free to deliver key events to on_key, which sets _reaction_event
+        to unblock this wait.
+
+        30-second timeout auto-skips so the game never hangs if the player
+        walks away or key routing fails for any reason.
+
+        Returns 'react' or 'skip'. _round_in_progress stays True the whole
+        time, so action slots [1–5] remain locked while the window is open.
+        """
+        cost = reaction_def["cost"]
+        name = reaction_def["name"]
+        desc = reaction_def["desc"]
+        resource_name = _get_resource_name(self.engine.state.player.archetype)
+        self._log(
+            f"[bold yellow]⚡ REACTION — [V] {name}  ({cost} {resource_name}): {desc}"
+            f"  │  [N] Take the hit[/]"
+        )
+        self._set_status(f"React? [V] {name}  [N] Skip", "yellow")
+
+        self._reaction_event = asyncio.Event()
+        self._reaction_choice = "skip"   # default if player ignores the prompt
+        self._reaction_pending = True
+
+        try:
+            await asyncio.wait_for(self._reaction_event.wait(), timeout=30.0)
+        except asyncio.TimeoutError:
+            self._reaction_choice = "skip"
+        finally:
+            self._reaction_pending = False
+            self._reaction_event = None
+
+        self._set_status("", "white")
+        return self._reaction_choice
+
+    def action_react(self) -> None:
+        """Player pressed V — trigger the pending reaction."""
+        if self._reaction_pending:
+            self._reaction_choice = "react"
+            self._reaction_pending = False
+            if self._reaction_event is not None:
+                self._reaction_event.set()
+
+    def action_skip_reaction(self) -> None:
+        """Player pressed N — skip the pending reaction and take full damage."""
+        if self._reaction_pending:
+            self._reaction_choice = "skip"
+            self._reaction_pending = False
+            if self._reaction_event is not None:
+                self._reaction_event.set()
+
+    def on_key(self, event) -> None:
+        """Directly intercept V/N during the reaction prompt window.
+
+        on_key fires on every Key event delivered to this ModalScreen, before
+        or after the BINDINGS machinery, regardless of what run_worker coroutine
+        is suspended. It calls the action methods which set _reaction_event,
+        immediately unblocking the asyncio.Event.wait() in _prompt_reaction.
+        """
+        if not self._reaction_pending:
+            return
+        if event.key == "v":
+            event.stop()
+            self.action_react()
+        elif event.key == "n":
+            event.stop()
+            self.action_skip_reaction()
 
     # ── Actions ───────────────────────────────────────────────────────────
 
@@ -969,9 +1155,7 @@ class CombatScreen(ModalScreen[None]):
             cm = CombatManager(state)
             self._set_active("2")
             self._start_round()          # regen fires first
-            if not self._spend_resource(1):   # costs 1 Mana — checked after regen
-                self._clear_active()
-                return
+            # Arcane Bolt is free — no Mana cost
 
             player_first = self._roll_initiative_and_log(enemy)
             await asyncio.sleep(_PACE_ANNOUNCE)
@@ -1430,6 +1614,20 @@ class CombatScreen(ModalScreen[None]):
 
         self._set_status("✓ Victory — press Esc to continue", "bold green")
         self.refresh_parent()
+
+
+# ── Reaction helpers ───────────────────────────────────────────────────────
+
+def _get_reaction_def(archetype: str) -> Optional[dict]:
+    """Return the reaction block for the given archetype, or None if absent."""
+    from engine.archetypes import ARCHETYPES
+    return ARCHETYPES.get(archetype, {}).get("reaction")
+
+
+def _get_resource_name(archetype: str) -> str:
+    """Return the resource name for the given archetype (e.g. 'Mana', 'Rage')."""
+    from engine.archetypes import get_resource_info
+    return get_resource_info(archetype).get("name", "resource")
 
 
 # ── Formatting helpers ─────────────────────────────────────────────────────
