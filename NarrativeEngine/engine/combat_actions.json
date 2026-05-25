@@ -52,6 +52,15 @@
       "name": "Defend",
       "short_desc": "+AC (CON mod). If enemy\nmisses, riposte for free.",
       "type": "defense"
+    },
+    {
+      "slot": "5",
+      "key": "5",
+      "id": "battle_cry",
+      "name": "Battle Cry",
+      "short_desc": "Bellow a war cry. +STR mod\nto all attacks for 2 turns.",
+      "type": "utility",
+      "level_unlock": 3
     }
   ],
 
@@ -79,6 +88,15 @@
       "name": "Evade",
       "short_desc": "DEX check DC 12. Success:\nattack + foe at disadvantage.",
       "type": "mobility"
+    },
+    {
+      "slot": "5",
+      "key": "5",
+      "id": "arcane_surge",
+      "name": "Arcane Surge",
+      "short_desc": "Unleash all power: 3d6 damage,\nno attack roll. Costs 1d6 HP.",
+      "type": "attack",
+      "level_unlock": 3
     }
   ],
 
@@ -106,6 +124,15 @@
       "name": "Meditate",
       "short_desc": "Centre yourself. Enemy\nattacks at disadvantage.",
       "type": "utility"
+    },
+    {
+      "slot": "5",
+      "key": "5",
+      "id": "ki_strike",
+      "name": "Ki Strike",
+      "short_desc": "Channel inner force: guaranteed\nhit, WIS + STR bonus damage.",
+      "type": "attack",
+      "level_unlock": 3
     }
   ],
 
@@ -133,6 +160,15 @@
       "name": "Poison Strike",
       "short_desc": "Normal attack + 1d4 poison\ndamage on hit.",
       "type": "attack"
+    },
+    {
+      "slot": "5",
+      "key": "5",
+      "id": "shadow_step",
+      "name": "Shadow Step",
+      "short_desc": "Vanish and reappear behind foe.\nNext hit is an automatic crit.",
+      "type": "attack",
+      "level_unlock": 3
     }
   ],
 

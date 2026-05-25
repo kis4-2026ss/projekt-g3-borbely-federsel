@@ -140,21 +140,42 @@ def _unequip_armor(state: GameState, change: Dict[str, Any]) -> str:
 # ── XP / Gold ops ──────────────────────────────────────────────────────────
 
 def _award_xp(state: GameState, change: Dict[str, Any]) -> str:
+    from engine.archetypes import get_level_bonus, get_level_unlock
+
     amount = _coerce_int(change.get("amount"), field="amount")
     amount = max(0, amount)
     player = state.player
     player.experience += amount
 
     leveled_up = False
+    last_bonus: Dict[str, Any] = {}
     while player.experience >= player.xp_to_next_level:
         player.experience -= player.xp_to_next_level
         player.level += 1
-        player.max_hp += 5
-        player.hp = min(player.hp + 5, player.max_hp)
+        bonus = get_level_bonus(player.archetype, player.level)
+        hp_gain = bonus.get("hp", 5)
+        player.max_hp += hp_gain
+        player.hp = min(player.hp + hp_gain, player.max_hp)
+        for stat, delta in bonus.get("stat_boosts", {}).items():
+            player.stats[stat] = player.stats.get(stat, 10) + delta
+        last_bonus = bonus
         leveled_up = True
+        unlock = get_level_unlock(player.archetype)
+        if unlock and player.level == unlock.get("level"):
+            state.add_log(
+                f"LEVEL UP: New ability unlocked at level {player.level}: "
+                f"[{unlock['slot']}] {unlock['name']}!"
+            )
 
     if leveled_up:
-        return f"+{amount} XP → Level {player.level}! (max HP +5)"
+        hp_gain = last_bonus.get("hp", 5)
+        stat_str = ", ".join(
+            f"{k.title()} +{v}" for k, v in last_bonus.get("stat_boosts", {}).items()
+        )
+        msg = f"Level {player.level}! Max HP +{hp_gain}."
+        if stat_str:
+            msg += f" {stat_str}."
+        return f"+{amount} XP → {msg}"
     return f"+{amount} XP ({player.experience}/{player.xp_to_next_level})"
 
 

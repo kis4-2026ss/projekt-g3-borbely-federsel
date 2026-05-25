@@ -35,9 +35,11 @@
     "gold": 0,
     "experience": 0,
     "status_effects": [],
-    "archetype": "fighter"
+    "archetype": "fighter",
+    "combat_resource": 3,
+    "max_combat_resource": 3
   },
-  "schema_version": 5,
+  "schema_version": 6,
   "current_location": "The Overgrown Outpost",
   "locations": {
     "The Overgrown Outpost": {
@@ -67,7 +69,7 @@
         "elowen",
         "spire"
       ],
-      "timestamp": "2026-05-24T21:56:53.754059"
+      "timestamp": "2026-05-25T13:45:56.915302"
     }
   ],
   "session_summary": "",

@@ -22,9 +22,15 @@ The player picks one action per turn from a numbered menu:
     (none)   — Power Strike / Evade / Defend  (fallback)
 """
 
+import asyncio
 import json
 import os
 from typing import Dict, List, Optional, Tuple
+
+# Pacing delays (seconds) — snappy but readable
+_PACE_ANNOUNCE = 0.35   # after the "Round N ⚔ Action!" header line
+_PACE_BETWEEN  = 0.45   # pause between player turn and enemy counter
+_PACE_ROLL     = 0.10   # between individual roll lines
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -152,6 +158,7 @@ class CombatScreen(ModalScreen[None]):
         Binding("2",       "slot2",          "2 Action",    priority=True, show=False),
         Binding("3",       "slot3",          "3 Action",    priority=True, show=False),
         Binding("4",       "slot4",          "4 Action",    priority=True, show=False),
+        Binding("5",       "slot5",          "5 Action",    priority=True, show=False),
         Binding("ctrl+u",  "use_item",       "^U Use Item", priority=True, show=False),
         Binding("r",       "flee",           "R Flee",      priority=True, show=False),
         Binding("escape",  "dismiss_combat", "Esc Close",   show=False),
@@ -162,9 +169,10 @@ class CombatScreen(ModalScreen[None]):
         self.engine = engine
         self.refresh_parent = refresh_parent
         self.round = 0
-        self._active_slot: str = ""          # slot key being executed right now
-        self._action_db: Dict = {}           # raw JSON data
+        self._active_slot: str = ""           # slot key being executed right now
+        self._action_db: Dict = {}            # raw JSON data
         self._actions: List[_ActionEntry] = []  # merged universal + archetype list
+        self._round_in_progress: bool = False # prevents double-fire during async delays
         self._load_actions()
 
     # ── Action registry ───────────────────────────────────────────────────
@@ -203,6 +211,11 @@ class CombatScreen(ModalScreen[None]):
 
     def on_mount(self) -> None:
         """Populate the combat log with existing entries and do an initial panel render."""
+        # Reset class resource to full at the start of each new combat encounter
+        if self.round == 0:
+            p = self.engine.state.player
+            if p.max_combat_resource > 0:
+                p.combat_resource = p.max_combat_resource
         log = self.query_one("#combat-log", RichLog)
         state = self.engine.state
         for line in state.combat_log[-8:]:
@@ -216,7 +229,27 @@ class CombatScreen(ModalScreen[None]):
     def _render_actions_panel(self) -> str:
         """Build Rich markup for the left actions column."""
         state = self.engine.state
+        p = state.player
         lines: List[str] = ["[bold underline]ACTIONS[/]\n"]
+
+        # Resource bar header (shown above action list when class has a resource)
+        if p.max_combat_resource > 0:
+            from engine.archetypes import ARCHETYPES
+            res_info = ARCHETYPES.get(p.archetype, {}).get("resource", {})
+            res_name  = res_info.get("name", "")
+            res_color = res_info.get("color", "yellow")
+            ability_costs = res_info.get("ability_costs", {})
+            res_ratio  = p.combat_resource / max(p.max_combat_resource, 1)
+            res_filled = max(0, min(12, int(res_ratio * 12)))
+            res_bar = (
+                f"[{res_color}]{'█' * res_filled}[/]"
+                + f"[dim]{'░' * (12 - res_filled)}[/]"
+            )
+            lines.append(f"[bold]{res_name}[/] {res_bar} {p.combat_resource}/{p.max_combat_resource}\n")
+        else:
+            ability_costs = {}
+            res_name = ""
+            res_color = "yellow"
 
         # Collect first consumable name for Use Item dynamic label
         consumable_name = ""
@@ -232,6 +265,8 @@ class CombatScreen(ModalScreen[None]):
                 consumable_name = name
                 break
 
+        player_level = state.player.level
+
         for entry in self._actions:
             slot      = entry.get("slot", "")
             key       = entry.get("key", slot)
@@ -240,6 +275,17 @@ class CombatScreen(ModalScreen[None]):
             etype     = entry.get("type", "attack")
             color     = _TYPE_COLOR.get(etype, "white")
             active    = slot == self._active_slot
+
+            # Level-gated slot-5 abilities: show lock badge when below required level
+            level_unlock = entry.get("level_unlock")
+            if level_unlock and player_level < level_unlock:
+                lines.append(
+                    f"[dim]\\[{key}] 🔒 {name}  [italic](Lv.{level_unlock})[/][/]"
+                )
+                for desc_line in raw_desc.split("\n"):
+                    lines.append(f"  [dim]{desc_line}[/]")
+                lines.append("")
+                continue
 
             # Dynamic use-item description
             if entry.get("id") == "use_item":
@@ -264,6 +310,17 @@ class CombatScreen(ModalScreen[None]):
                     lines.append(f"  [yellow]{desc_line}[/]")
                 else:
                     lines.append(f"  [dim]{desc_line}[/]")
+
+            # Resource cost indicator
+            cost = ability_costs.get(entry.get("id", ""), 0)
+            if cost > 0 and res_name:
+                if active:
+                    lines.append(f"  [bold yellow]{cost} {res_name}[/]")
+                elif p.combat_resource < cost:
+                    lines.append(f"  [bold red]{cost} {res_name} (insufficient)[/]")
+                else:
+                    lines.append(f"  [dim {res_color}]{cost} {res_name}[/]")
+
             lines.append("")
 
         return "\n".join(lines)
@@ -313,6 +370,20 @@ class CombatScreen(ModalScreen[None]):
             lines.append(f"  AC [bold cyan]{p.ac}[/]  [dim]Prof +{p.proficiency_bonus}[/]")
 
         lines.append(_hp_bar(p.hp, p.max_hp))
+
+        # Class resource bar
+        if p.max_combat_resource > 0:
+            from engine.archetypes import ARCHETYPES
+            res_info  = ARCHETYPES.get(p.archetype, {}).get("resource", {})
+            res_name  = res_info.get("name", "")
+            res_color = res_info.get("color", "yellow")
+            res_ratio  = p.combat_resource / max(p.max_combat_resource, 1)
+            res_filled = max(0, min(16, int(res_ratio * 16)))
+            res_bar = (
+                f"[{res_color}]{'█' * res_filled}[/]"
+                + f"[dim]{'░' * (16 - res_filled)}[/]"
+            )
+            lines.append(f"  {res_name} {res_bar} {p.combat_resource}/{p.max_combat_resource}")
 
         # XP bar
         xp_ratio = min(p.experience / max(p.xp_to_next_level, 1), 1.0)
@@ -378,6 +449,25 @@ class CombatScreen(ModalScreen[None]):
         """Clear the active-slot highlight."""
         self._active_slot = ""
 
+    def _spend_resource(self, cost: int) -> bool:
+        """Deduct `cost` from the player's class resource.
+        Returns True if the action can proceed; False (+ shows error) if insufficient."""
+        if cost <= 0:
+            return True
+        p = self.engine.state.player
+        if p.max_combat_resource <= 0:
+            return True  # archetype has no resource system
+        from engine.archetypes import ARCHETYPES
+        res_name = ARCHETYPES.get(p.archetype, {}).get("resource", {}).get("name", "resource")
+        if p.combat_resource < cost:
+            self._set_status(
+                f"Not enough {res_name}! ({p.combat_resource}/{p.max_combat_resource})", "red"
+            )
+            return False
+        p.combat_resource -= cost
+        self._refresh_panels()
+        return True
+
     # ── Shared action helpers ─────────────────────────────────────────────
 
     def _guard(self) -> bool:
@@ -394,7 +484,15 @@ class CombatScreen(ModalScreen[None]):
     def _start_round(self) -> None:
         """Housekeeping at the top of every player action."""
         self.round += 1
-        self.engine.state.player.temp_ac_bonus = 0
+        state = self.engine.state
+        p = state.player
+        p.temp_ac_bonus = 0
+        # Regen class resource (Mana has regen=0, so Mage's pool only depletes)
+        if p.max_combat_resource > 0:
+            from engine.archetypes import ARCHETYPES
+            regen = ARCHETYPES.get(p.archetype, {}).get("resource", {}).get("regen_per_round", 0)
+            if regen > 0:
+                p.combat_resource = min(p.max_combat_resource, p.combat_resource + regen)
 
     def _roll_initiative_and_log(self, enemy) -> bool:
         """Roll initiative, log the result, return True if player acts first."""
@@ -410,11 +508,20 @@ class CombatScreen(ModalScreen[None]):
         )
         return player_first
 
-    def _do_enemy_counter(self, cm, enemy) -> bool:
-        """Run enemy counter-attack. Returns True if player died."""
+    async def _do_enemy_counter(self, cm, enemy, initial_pause: bool = True) -> bool:
+        """Run enemy counter-attack with pacing. Returns True if player died.
+
+        initial_pause=True (default) waits _PACE_BETWEEN before enemy rolls — used
+        when the player acted first and we need a dramatic beat before the counter.
+        Pass initial_pause=False when the enemy already went first (initiative lost)
+        so we don't double-pause after player's counter-strike.
+        """
+        if initial_pause:
+            await asyncio.sleep(_PACE_BETWEEN)
         enemy_rolls = cm.resolve_enemy_attack(enemy)
         for r in enemy_rolls:
             self._log(_format_roll_line(r))
+            await asyncio.sleep(_PACE_ROLL)
         if self.engine.state.player.hp <= 0:
             self._log("[bold red]You have fallen in battle.[/]")
             self._clear_active()
@@ -439,6 +546,18 @@ class CombatScreen(ModalScreen[None]):
         state.add_log(f"COMBAT: {enemy.name} has been defeated! Gained {xp} XP.")
         state.combat_log.append(f"{enemy.name} defeated! +{xp} XP")
         self._log(f"[bold yellow]{enemy.name} has been defeated! +{xp} XP[/]")
+
+        # Advance the rest counter.
+        # Boss kill → immediately ready (set to 2); minor kill → +1 (need 2 total).
+        is_boss = any(
+            t.is_boss and t.enemy.name == enemy.name
+            for t in state.encounter_registry.values()
+        )
+        if is_boss:
+            state.enemies_defeated_since_rest = 2
+        else:
+            state.enemies_defeated_since_rest = min(2, state.enemies_defeated_since_rest + 1)
+
         return True
 
     def _finish_round(self, enemy, enemy_died: bool) -> None:
@@ -461,149 +580,178 @@ class CombatScreen(ModalScreen[None]):
 
     # ── Actions ───────────────────────────────────────────────────────────
 
-    def action_strike(self) -> None:
+    async def action_strike(self) -> None:
         """Standard attack: 1d20 + STR + proficiency vs enemy AC."""
-        if self._guard():
+        if self._round_in_progress or self._guard():
             return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        enemy = state.active_enemies[0]
-        cm = CombatManager(state)
-        self._set_active("1")
-        self._start_round()
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._set_active("1")
+            self._start_round()
 
-        player_first = self._roll_initiative_and_log(enemy)
+            player_first = self._roll_initiative_and_log(enemy)
+            await asyncio.sleep(_PACE_ANNOUNCE)
 
-        if not player_first:
-            if self._do_enemy_counter(cm, enemy):
-                return
+            if not player_first:
+                if await self._do_enemy_counter(cm, enemy, initial_pause=False):
+                    return
+                await asyncio.sleep(_PACE_BETWEEN)
 
-        player_rolls = cm.resolve_player_attack(enemy)
-        for r in player_rolls:
-            self._log(_format_roll_line(r))
-
-        enemy_died = self._check_enemy_dead(enemy)
-        if enemy_died:
-            self._finish_round(enemy, True)
-            return
-
-        if player_first:
-            if self._do_enemy_counter(cm, enemy):
-                return
-
-        self._finish_round(enemy, False)
-
-    def action_power_strike(self) -> None:
-        """Power Strike: disadvantage to-hit, but double damage dice on hit."""
-        if self._guard():
-            return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        enemy = state.active_enemies[0]
-        cm = CombatManager(state)
-        # _active_slot already set by action_slot2 dispatcher
-        self._start_round()
-
-        player_first = self._roll_initiative_and_log(enemy)
-
-        if not player_first:
-            if self._do_enemy_counter(cm, enemy):
-                return
-
-        self._log("[bold magenta]⚡ Power Strike![/]")
-        player_rolls = cm.resolve_power_strike(enemy)
-        for r in player_rolls:
-            self._log(_format_roll_line(r))
-
-        enemy_died = self._check_enemy_dead(enemy)
-        if enemy_died:
-            self._finish_round(enemy, True)
-            return
-
-        if player_first:
-            if self._do_enemy_counter(cm, enemy):
-                return
-
-        self._finish_round(enemy, False)
-
-    def action_evade(self) -> None:
-        """Evade: DEX check vs DC 12."""
-        if self._guard():
-            return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        enemy = state.active_enemies[0]
-        cm = CombatManager(state)
-        # _active_slot already set by action_slot3/slot4 dispatcher
-        self._start_round()
-
-        self._log(f"[bold cyan]🌀 Evade — Round {self.round}[/]")
-        success, evade_roll = cm.resolve_evade()
-        self._log(_format_roll_line(evade_roll))
-
-        if success:
-            self._log("[cyan]You slip the strike — and lunge back![/]")
             player_rolls = cm.resolve_player_attack(enemy)
             for r in player_rolls:
                 self._log(_format_roll_line(r))
+                await asyncio.sleep(_PACE_ROLL)
+
             enemy_died = self._check_enemy_dead(enemy)
             if enemy_died:
                 self._finish_round(enemy, True)
                 return
-            if self._do_enemy_counter(cm, enemy):
-                return
-        else:
-            self._log("[red]Caught off-balance — enemy strikes with advantage![/]")
-            if self._do_enemy_counter(cm, enemy):
-                return
 
-        self._finish_round(enemy, False)
+            if player_first:
+                if await self._do_enemy_counter(cm, enemy):
+                    return
 
-    def action_defend(self) -> None:
-        """Defend: raise AC by 2 + CON mod. If the enemy misses, riposte for free."""
-        if self._guard():
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
+
+    async def action_power_strike(self) -> None:
+        """Power Strike: disadvantage to-hit, but double damage dice on hit."""
+        if self._round_in_progress or self._guard():
             return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        enemy = state.active_enemies[0]
-        cm = CombatManager(state)
-        # _active_slot already set by action_slot4 dispatcher
-        self._start_round()
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            # _active_slot already set by action_slot2 dispatcher
+            self._start_round()
 
-        ac_bonus = cm.resolve_defend()
-        self._log(
-            f"[bold blue]🛡 Defend — Round {self.round}  "
-            f"(+{ac_bonus} AC  [dim]— miss = riposte[/])[/]"
-        )
+            player_first = self._roll_initiative_and_log(enemy)
+            await asyncio.sleep(_PACE_ANNOUNCE)
 
-        enemy_rolls = cm.resolve_enemy_attack(enemy)
-        for r in enemy_rolls:
-            self._log(_format_roll_line(r))
+            if not player_first:
+                if await self._do_enemy_counter(cm, enemy, initial_pause=False):
+                    return
+                await asyncio.sleep(_PACE_BETWEEN)
 
-        if state.player.hp <= 0:
-            self._log("[bold red]You have fallen in battle.[/]")
-            self._clear_active()
-            self._refresh_panels()
-            self.refresh_parent()
-            self.app._handle_player_death()
-            self.dismiss()
-            return
-
-        attack_roll = enemy_rolls[0] if enemy_rolls else None
-        if attack_roll is not None and attack_roll.success is False:
-            self._log("[bold cyan]⚡ Riposte! Their swing found only air.[/]")
-            riposte_rolls = cm.resolve_player_attack(enemy)
-            for r in riposte_rolls:
+            self._log("[bold magenta]⚡ Power Strike![/]")
+            player_rolls = cm.resolve_power_strike(enemy)
+            for r in player_rolls:
                 self._log(_format_roll_line(r))
-            enemy_died = self._check_enemy_dead(enemy)
-            self._finish_round(enemy, enemy_died)
-            return
+                await asyncio.sleep(_PACE_ROLL)
 
-        self._finish_round(enemy, False)
+            enemy_died = self._check_enemy_dead(enemy)
+            if enemy_died:
+                self._finish_round(enemy, True)
+                return
+
+            if player_first:
+                if await self._do_enemy_counter(cm, enemy):
+                    return
+
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
+
+    async def action_evade(self) -> None:
+        """Evade: DEX check vs DC 12."""
+        if self._round_in_progress or self._guard():
+            return
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            # _active_slot already set by action_slot3/slot4 dispatcher
+            self._start_round()
+
+            self._log(f"[bold cyan]🌀 Evade — Round {self.round}[/]")
+            success, evade_roll = cm.resolve_evade()
+            self._log(_format_roll_line(evade_roll))
+            await asyncio.sleep(_PACE_ANNOUNCE)
+
+            if success:
+                self._log("[cyan]You slip the strike — and lunge back![/]")
+                player_rolls = cm.resolve_player_attack(enemy)
+                for r in player_rolls:
+                    self._log(_format_roll_line(r))
+                    await asyncio.sleep(_PACE_ROLL)
+                enemy_died = self._check_enemy_dead(enemy)
+                if enemy_died:
+                    self._finish_round(enemy, True)
+                    return
+                if await self._do_enemy_counter(cm, enemy):
+                    return
+            else:
+                self._log("[red]Caught off-balance — enemy strikes with advantage![/]")
+                if await self._do_enemy_counter(cm, enemy, initial_pause=False):
+                    return
+
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
+
+    async def action_defend(self) -> None:
+        """Defend: raise AC by 2 + CON mod. If the enemy misses, riposte for free."""
+        if self._round_in_progress or self._guard():
+            return
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            # _active_slot already set by action_slot4 dispatcher
+            self._start_round()
+
+            ac_bonus = cm.resolve_defend()
+            self._log(
+                f"[bold blue]🛡 Defend — Round {self.round}  "
+                f"(+{ac_bonus} AC  [dim]— miss = riposte[/])[/]"
+            )
+            await asyncio.sleep(_PACE_ANNOUNCE)
+            await asyncio.sleep(_PACE_BETWEEN)
+
+            enemy_rolls = cm.resolve_enemy_attack(enemy)
+            for r in enemy_rolls:
+                self._log(_format_roll_line(r))
+                await asyncio.sleep(_PACE_ROLL)
+
+            if state.player.hp <= 0:
+                self._log("[bold red]You have fallen in battle.[/]")
+                self._clear_active()
+                self._refresh_panels()
+                self.refresh_parent()
+                self.app._handle_player_death()
+                self.dismiss()
+                return
+
+            attack_roll = enemy_rolls[0] if enemy_rolls else None
+            if attack_roll is not None and attack_roll.success is False:
+                self._log("[bold cyan]⚡ Riposte! Their swing found only air.[/]")
+                await asyncio.sleep(0.25)
+                riposte_rolls = cm.resolve_player_attack(enemy)
+                for r in riposte_rolls:
+                    self._log(_format_roll_line(r))
+                    await asyncio.sleep(_PACE_ROLL)
+                enemy_died = self._check_enemy_dead(enemy)
+                self._finish_round(enemy, enemy_died)
+                return
+
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
 
     def action_use_item(self) -> None:
         """Use the first available usable item (consumable or combat type)."""
-        if self.engine.state.player.hp <= 0:
+        if self._round_in_progress or self.engine.state.player.hp <= 0:
             return
         consumables = self._consumable_names()
         if not consumables:
@@ -682,290 +830,532 @@ class CombatScreen(ModalScreen[None]):
 
     # ── Archetype slot dispatchers ────────────────────────────────────────
 
-    def action_slot2(self) -> None:
+    async def action_slot2(self) -> None:
         self._set_active("2")
         arch = self.engine.state.player.archetype
         if arch == "fighter":
-            self._do_cleave()
+            await self._do_cleave()
         elif arch == "mage":
-            self._do_arcane_bolt()
+            await self._do_arcane_bolt()
         elif arch == "monk":
-            self._do_flurry()
+            await self._do_flurry()
         elif arch == "rogue":
-            self._do_backstab()
+            await self._do_backstab()
         else:
-            self.action_power_strike()
+            await self.action_power_strike()
 
-    def action_slot3(self) -> None:
+    async def action_slot3(self) -> None:
         self._set_active("3")
         arch = self.engine.state.player.archetype
         if arch == "fighter":
-            self._do_second_wind()
+            await self._do_second_wind()
         elif arch == "mage":
-            self._do_mana_shield()
+            await self._do_mana_shield()
         elif arch == "monk":
-            self._do_iron_body()
+            await self._do_iron_body()
         elif arch == "rogue":
-            self._do_smoke_screen()
+            await self._do_smoke_screen()
         else:
-            self.action_evade()
+            await self.action_evade()
 
-    def action_slot4(self) -> None:
+    async def action_slot4(self) -> None:
         self._set_active("4")
         arch = self.engine.state.player.archetype
         if arch == "mage":
-            self.action_evade()
+            await self.action_evade()
         elif arch == "monk":
-            self._do_meditate()
+            await self._do_meditate()
         elif arch == "rogue":
-            self._do_poison_strike()
+            await self._do_poison_strike()
         else:
-            self.action_defend()
+            await self.action_defend()
+
+    async def action_slot5(self) -> None:
+        """Dispatch the level-3 archetype unlock ability, or show a locked message."""
+        from engine.archetypes import get_level_unlock
+        state = self.engine.state
+        unlock = get_level_unlock(state.player.archetype)
+        if not unlock:
+            return
+        if state.player.level < unlock.get("level", 99):
+            self._set_status(
+                f"{unlock['name']} unlocks at Lv.{unlock['level']}.", "dim"
+            )
+            return
+        self._set_active("5")
+        arch = state.player.archetype
+        if arch == "fighter":
+            await self._do_battle_cry()
+        elif arch == "mage":
+            await self._do_arcane_surge()
+        elif arch == "monk":
+            await self._do_ki_strike()
+        elif arch == "rogue":
+            await self._do_shadow_step()
 
     # ── Fighter actions ───────────────────────────────────────────────────
 
-    def _do_cleave(self) -> None:
-        if self._guard():
+    async def _do_cleave(self) -> None:
+        if self._round_in_progress or self._guard():
             return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        cm = CombatManager(state)
-        self._set_active("2")
-        self._start_round()
-        self._log(f"[bold red]⚔ Cleave! — Round {self.round}[/]")
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            cm = CombatManager(state)
+            self._set_active("2")
+            self._start_round()          # regen fires first
+            if not self._spend_resource(1):   # costs 1 Rage — checked after regen
+                self._clear_active()
+                return
+            self._log(f"[bold red]⚔ Cleave! — Round {self.round}[/]")
+            await asyncio.sleep(_PACE_ANNOUNCE)
 
-        enemies_snapshot = list(state.active_enemies)
-        rolls = cm.resolve_cleave(enemies_snapshot)
-        for r in rolls:
-            self._log(_format_roll_line(r))
+            enemies_snapshot = list(state.active_enemies)
+            rolls = cm.resolve_cleave(enemies_snapshot)
+            for r in rolls:
+                self._log(_format_roll_line(r))
+                await asyncio.sleep(_PACE_ROLL)
 
-        all_dead = True
-        for enemy in enemies_snapshot:
-            if not self._check_enemy_dead(enemy):
-                all_dead = False
+            all_dead = True
+            for enemy in enemies_snapshot:
+                if not self._check_enemy_dead(enemy):
+                    all_dead = False
 
-        if all_dead or not state.active_enemies:
-            self._finish_round(enemies_snapshot[0], True)
+            if all_dead or not state.active_enemies:
+                self._finish_round(enemies_snapshot[0], True)
+                return
+
+            first_survivor = state.active_enemies[0]
+            if await self._do_enemy_counter(cm, first_survivor):
+                return
+            self._finish_round(first_survivor, False)
+        finally:
+            self._round_in_progress = False
+
+    async def _do_second_wind(self) -> None:
+        if self._round_in_progress or self._guard():
             return
-
-        first_survivor = state.active_enemies[0]
-        if self._do_enemy_counter(cm, first_survivor):
-            return
-        self._finish_round(first_survivor, False)
-
-    def _do_second_wind(self) -> None:
-        if self._guard():
-            return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        enemy = state.active_enemies[0]
-        cm = CombatManager(state)
-        self._set_active("3")
-        self._start_round()
-        self._log(f"[bold green]💚 Second Wind — Round {self.round}[/]")
-        rolls = cm.resolve_second_wind()
-        for r in rolls:
-            self._log(_format_roll_line(r))
-        if self._do_enemy_counter(cm, enemy):
-            return
-        self._finish_round(enemy, False)
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._set_active("3")
+            self._start_round()
+            self._log(f"[bold green]💚 Second Wind — Round {self.round}[/]")
+            await asyncio.sleep(_PACE_ANNOUNCE)
+            rolls = cm.resolve_second_wind()
+            for r in rolls:
+                self._log(_format_roll_line(r))
+                await asyncio.sleep(_PACE_ROLL)
+            if await self._do_enemy_counter(cm, enemy):
+                return
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
 
     # ── Mage actions ──────────────────────────────────────────────────────
 
-    def _do_arcane_bolt(self) -> None:
-        if self._guard():
+    async def _do_arcane_bolt(self) -> None:
+        if self._round_in_progress or self._guard():
             return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        enemy = state.active_enemies[0]
-        cm = CombatManager(state)
-        self._set_active("2")
-        self._start_round()
-
-        player_first = self._roll_initiative_and_log(enemy)
-        if not player_first:
-            if self._do_enemy_counter(cm, enemy):
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._set_active("2")
+            self._start_round()          # regen fires first
+            if not self._spend_resource(1):   # costs 1 Mana — checked after regen
+                self._clear_active()
                 return
 
-        self._log(f"[bold blue]✨ Arcane Bolt — Round {self.round}[/]")
-        rolls = cm.resolve_arcane_bolt(enemy)
-        for r in rolls:
-            self._log(_format_roll_line(r))
+            player_first = self._roll_initiative_and_log(enemy)
+            await asyncio.sleep(_PACE_ANNOUNCE)
 
-        enemy_died = self._check_enemy_dead(enemy)
-        if enemy_died:
-            self._finish_round(enemy, True)
-            return
-        if player_first:
-            if self._do_enemy_counter(cm, enemy):
+            if not player_first:
+                if await self._do_enemy_counter(cm, enemy, initial_pause=False):
+                    return
+                await asyncio.sleep(_PACE_BETWEEN)
+
+            self._log(f"[bold blue]✨ Arcane Bolt — Round {self.round}[/]")
+            rolls = cm.resolve_arcane_bolt(enemy)
+            for r in rolls:
+                self._log(_format_roll_line(r))
+                await asyncio.sleep(_PACE_ROLL)
+
+            enemy_died = self._check_enemy_dead(enemy)
+            if enemy_died:
+                self._finish_round(enemy, True)
                 return
-        self._finish_round(enemy, False)
+            if player_first:
+                if await self._do_enemy_counter(cm, enemy):
+                    return
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
 
-    def _do_mana_shield(self) -> None:
-        if self._guard():
+    async def _do_mana_shield(self) -> None:
+        if self._round_in_progress or self._guard():
             return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        enemy = state.active_enemies[0]
-        cm = CombatManager(state)
-        self._set_active("3")
-        self._start_round()
-        self._log(f"[bold blue]🔮 Mana Shield — Round {self.round}[/]")
-        rolls = cm.resolve_mana_shield()
-        for r in rolls:
-            self._log(_format_roll_line(r))
-        if self._do_enemy_counter(cm, enemy):
-            return
-        self._finish_round(enemy, False)
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._set_active("3")
+            self._start_round()          # regen fires first
+            if not self._spend_resource(1):   # costs 1 Mana — checked after regen
+                self._clear_active()
+                return
+            self._log(f"[bold blue]🔮 Mana Shield — Round {self.round}[/]")
+            await asyncio.sleep(_PACE_ANNOUNCE)
+            rolls = cm.resolve_mana_shield()
+            for r in rolls:
+                self._log(_format_roll_line(r))
+                await asyncio.sleep(_PACE_ROLL)
+            if await self._do_enemy_counter(cm, enemy):
+                return
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
 
     # ── Monk actions ──────────────────────────────────────────────────────
 
-    def _do_flurry(self) -> None:
-        if self._guard():
+    async def _do_flurry(self) -> None:
+        if self._round_in_progress or self._guard():
             return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        enemy = state.active_enemies[0]
-        cm = CombatManager(state)
-        self._set_active("2")
-        self._start_round()
-
-        player_first = self._roll_initiative_and_log(enemy)
-        if not player_first:
-            if self._do_enemy_counter(cm, enemy):
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._set_active("2")
+            self._start_round()          # regen fires first
+            if not self._spend_resource(1):   # costs 1 Ki — checked after regen
+                self._clear_active()
                 return
 
-        self._log(f"[bold yellow]👊 Flurry of Blows — Round {self.round}[/]")
-        rolls = cm.resolve_flurry(enemy)
-        for r in rolls:
-            self._log(_format_roll_line(r))
+            player_first = self._roll_initiative_and_log(enemy)
+            await asyncio.sleep(_PACE_ANNOUNCE)
 
-        enemy_died = self._check_enemy_dead(enemy)
-        if enemy_died:
-            self._finish_round(enemy, True)
-            return
-        if player_first:
-            if self._do_enemy_counter(cm, enemy):
+            if not player_first:
+                if await self._do_enemy_counter(cm, enemy, initial_pause=False):
+                    return
+                await asyncio.sleep(_PACE_BETWEEN)
+
+            self._log(f"[bold yellow]👊 Flurry of Blows — Round {self.round}[/]")
+            rolls = cm.resolve_flurry(enemy)
+            for r in rolls:
+                self._log(_format_roll_line(r))
+                await asyncio.sleep(_PACE_ROLL)
+
+            enemy_died = self._check_enemy_dead(enemy)
+            if enemy_died:
+                self._finish_round(enemy, True)
                 return
-        self._finish_round(enemy, False)
+            if player_first:
+                if await self._do_enemy_counter(cm, enemy):
+                    return
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
 
-    def _do_iron_body(self) -> None:
-        if self._guard():
+    async def _do_iron_body(self) -> None:
+        if self._round_in_progress or self._guard():
             return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        enemy = state.active_enemies[0]
-        cm = CombatManager(state)
-        self._set_active("3")
-        self._start_round()
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._set_active("3")
+            self._start_round()
 
-        ac_bonus = cm.resolve_iron_body()
-        self._log(
-            f"[bold cyan]🗿 Iron Body — Round {self.round}  "
-            f"(+{ac_bonus} AC[dim] — stance holds[/])[/]"
-        )
-        self._refresh_panels()
-        if self._do_enemy_counter(cm, enemy):
-            return
-        self._finish_round(enemy, False)
+            ac_bonus = cm.resolve_iron_body()
+            self._log(
+                f"[bold cyan]🗿 Iron Body — Round {self.round}  "
+                f"(+{ac_bonus} AC[dim] — stance holds[/])[/]"
+            )
+            self._refresh_panels()
+            await asyncio.sleep(_PACE_ANNOUNCE)
+            if await self._do_enemy_counter(cm, enemy):
+                return
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
 
-    def _do_meditate(self) -> None:
-        if self._guard():
+    async def _do_meditate(self) -> None:
+        if self._round_in_progress or self._guard():
             return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        enemy = state.active_enemies[0]
-        cm = CombatManager(state)
-        self._set_active("4")
-        self._start_round()
-        self._log(f"[bold cyan]🧘 Meditate — Round {self.round}[/]")
-        cm.resolve_meditate()
-        self._log("[cyan]You centre yourself. Focused — enemy off-balance.[/]")
-        if self._do_enemy_counter(cm, enemy):
-            return
-        self._finish_round(enemy, False)
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._set_active("4")
+            self._start_round()
+            self._log(f"[bold cyan]🧘 Meditate — Round {self.round}[/]")
+            cm.resolve_meditate()
+            # Meditate grants +1 bonus Ki (on top of the round's normal regen)
+            p = state.player
+            if p.max_combat_resource > 0 and p.archetype == "monk":
+                p.combat_resource = min(p.max_combat_resource, p.combat_resource + 1)
+                self._log(f"[cyan]You centre yourself. Ki restores. Focused — enemy off-balance.[/]")
+            else:
+                self._log("[cyan]You centre yourself. Focused — enemy off-balance.[/]")
+            await asyncio.sleep(_PACE_ANNOUNCE)
+            if await self._do_enemy_counter(cm, enemy):
+                return
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
 
     # ── Rogue actions ─────────────────────────────────────────────────────
 
-    def _do_backstab(self) -> None:
-        if self._guard():
+    async def _do_backstab(self) -> None:
+        if self._round_in_progress or self._guard():
             return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        enemy = state.active_enemies[0]
-        cm = CombatManager(state)
-        self._set_active("2")
-        self._start_round()
-
-        player_first = self._roll_initiative_and_log(enemy)
-        if not player_first:
-            if self._do_enemy_counter(cm, enemy):
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._set_active("2")
+            self._start_round()          # regen fires first
+            if not self._spend_resource(1):   # costs 1 Energy — checked after regen
+                self._clear_active()
                 return
 
-        self._log(f"[bold red]🗡 Backstab — Round {self.round}[/]")
-        rolls = cm.resolve_backstab(enemy)
-        for r in rolls:
-            self._log(_format_roll_line(r))
+            player_first = self._roll_initiative_and_log(enemy)
+            await asyncio.sleep(_PACE_ANNOUNCE)
 
-        enemy_died = self._check_enemy_dead(enemy)
-        if enemy_died:
-            self._finish_round(enemy, True)
-            return
-        if player_first:
-            if self._do_enemy_counter(cm, enemy):
+            if not player_first:
+                if await self._do_enemy_counter(cm, enemy, initial_pause=False):
+                    return
+                await asyncio.sleep(_PACE_BETWEEN)
+
+            self._log(f"[bold red]🗡 Backstab — Round {self.round}[/]")
+            rolls = cm.resolve_backstab(enemy)
+            for r in rolls:
+                self._log(_format_roll_line(r))
+                await asyncio.sleep(_PACE_ROLL)
+
+            enemy_died = self._check_enemy_dead(enemy)
+            if enemy_died:
+                self._finish_round(enemy, True)
                 return
-        self._finish_round(enemy, False)
+            if player_first:
+                if await self._do_enemy_counter(cm, enemy):
+                    return
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
 
-    def _do_smoke_screen(self) -> None:
-        if self._guard():
+    async def _do_smoke_screen(self) -> None:
+        if self._round_in_progress or self._guard():
             return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        enemy = state.active_enemies[0]
-        cm = CombatManager(state)
-        self._set_active("3")
-        self._start_round()
-        self._log(f"[bold yellow]💨 Smoke Screen — Round {self.round}[/]")
-        cm.resolve_smoke_screen()
-        self._log("[yellow]Smoke fills the gap. You vanish into it.[/]")
-        if self._do_enemy_counter(cm, enemy):
-            return
-        self._finish_round(enemy, False)
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._set_active("3")
+            self._start_round()
+            self._log(f"[bold yellow]💨 Smoke Screen — Round {self.round}[/]")
+            cm.resolve_smoke_screen()
+            self._log("[yellow]Smoke fills the gap. You vanish into it.[/]")
+            await asyncio.sleep(_PACE_ANNOUNCE)
+            if await self._do_enemy_counter(cm, enemy):
+                return
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
 
-    def _do_poison_strike(self) -> None:
-        if self._guard():
+    async def _do_poison_strike(self) -> None:
+        if self._round_in_progress or self._guard():
             return
-        from engine.combat import CombatManager
-        state = self.engine.state
-        enemy = state.active_enemies[0]
-        cm = CombatManager(state)
-        self._set_active("4")
-        self._start_round()
-
-        player_first = self._roll_initiative_and_log(enemy)
-        if not player_first:
-            if self._do_enemy_counter(cm, enemy):
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._set_active("4")
+            self._start_round()          # regen fires first
+            if not self._spend_resource(1):   # costs 1 Energy — checked after regen
+                self._clear_active()
                 return
 
-        self._log(f"[bold green]☠ Poison Strike — Round {self.round}[/]")
-        rolls = cm.resolve_poison_strike(enemy)
-        for r in rolls:
-            self._log(_format_roll_line(r))
+            player_first = self._roll_initiative_and_log(enemy)
+            await asyncio.sleep(_PACE_ANNOUNCE)
 
-        enemy_died = self._check_enemy_dead(enemy)
-        if enemy_died:
-            self._finish_round(enemy, True)
-            return
-        if player_first:
-            if self._do_enemy_counter(cm, enemy):
+            if not player_first:
+                if await self._do_enemy_counter(cm, enemy, initial_pause=False):
+                    return
+                await asyncio.sleep(_PACE_BETWEEN)
+
+            self._log(f"[bold green]☠ Poison Strike — Round {self.round}[/]")
+            rolls = cm.resolve_poison_strike(enemy)
+            for r in rolls:
+                self._log(_format_roll_line(r))
+                await asyncio.sleep(_PACE_ROLL)
+
+            enemy_died = self._check_enemy_dead(enemy)
+            if enemy_died:
+                self._finish_round(enemy, True)
                 return
-        self._finish_round(enemy, False)
+            if player_first:
+                if await self._do_enemy_counter(cm, enemy):
+                    return
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
+
+    # ── Level-3 unlock abilities ──────────────────────────────────────────
+
+    async def _do_battle_cry(self) -> None:
+        """Fighter Lv3 — Battle Cry: buff action, no enemy counter this round."""
+        if self._round_in_progress or self._guard():
+            return
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._start_round()          # regen fires first
+            if not self._spend_resource(2):   # costs 2 Rage — checked after regen
+                self._clear_active()
+                return
+            self._log(f"[bold yellow]📣 Battle Cry! — Round {self.round}[/]")
+            await asyncio.sleep(_PACE_ANNOUNCE)
+            cm.resolve_battle_cry()
+            self._log(
+                "[yellow]A war cry tears through the air. "
+                "Your strikes sharpen for the next 2 turns.[/]"
+            )
+            await asyncio.sleep(_PACE_BETWEEN)
+            # Battle Cry intimidates — the enemy braces rather than attacking
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
+
+    async def _do_arcane_surge(self) -> None:
+        """Mage Lv3 — Arcane Surge: pay HP, deal guaranteed 3d6+INT damage."""
+        if self._round_in_progress or self._guard():
+            return
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._start_round()          # regen fires first (Mage regen=0, so no change)
+            if not self._spend_resource(3):   # costs 3 Mana — checked after regen
+                self._clear_active()
+                return
+            self._log(f"[bold magenta]⚡ Arcane Surge — Round {self.round}[/]")
+            await asyncio.sleep(_PACE_ANNOUNCE)
+            rolls = cm.resolve_arcane_surge(enemy)
+            for r in rolls:
+                self._log(_format_roll_line(r))
+                await asyncio.sleep(_PACE_ROLL)
+
+            # Check if the HP cost killed the player
+            if state.player.hp <= 0:
+                self._log("[bold red]The surge tears you apart. You have fallen.[/]")
+                self._clear_active()
+                self._refresh_panels()
+                self.refresh_parent()
+                self.app._handle_player_death()
+                self.dismiss()
+                return
+
+            enemy_died = self._check_enemy_dead(enemy)
+            if enemy_died:
+                self._finish_round(enemy, True)
+                return
+            if await self._do_enemy_counter(cm, enemy):
+                return
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
+
+    async def _do_ki_strike(self) -> None:
+        """Monk Lv3 — Ki Strike: guaranteed hit, 1d8+WIS+STR damage."""
+        if self._round_in_progress or self._guard():
+            return
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._start_round()          # regen fires first
+            if not self._spend_resource(3):   # costs 3 Ki — checked after regen
+                self._clear_active()
+                return
+            self._log(f"[bold cyan]🌀 Ki Strike — Round {self.round}[/]")
+            await asyncio.sleep(_PACE_ANNOUNCE)
+            rolls = cm.resolve_ki_strike(enemy)
+            for r in rolls:
+                self._log(_format_roll_line(r))
+                await asyncio.sleep(_PACE_ROLL)
+            enemy_died = self._check_enemy_dead(enemy)
+            if enemy_died:
+                self._finish_round(enemy, True)
+                return
+            if await self._do_enemy_counter(cm, enemy):
+                return
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
+
+    async def _do_shadow_step(self) -> None:
+        """Rogue Lv3 — Shadow Step: forced-crit attack with doubled damage dice."""
+        if self._round_in_progress or self._guard():
+            return
+        self._round_in_progress = True
+        try:
+            from engine.combat import CombatManager
+            state = self.engine.state
+            enemy = state.active_enemies[0]
+            cm = CombatManager(state)
+            self._start_round()          # regen fires first
+            if not self._spend_resource(3):   # costs 3 Energy — checked after regen
+                self._clear_active()
+                return
+            self._log(f"[bold red]👁 Shadow Step — Round {self.round}[/]")
+            await asyncio.sleep(_PACE_ANNOUNCE)
+            rolls = cm.resolve_shadow_step(enemy)
+            for r in rolls:
+                self._log(_format_roll_line(r))
+                await asyncio.sleep(_PACE_ROLL)
+            enemy_died = self._check_enemy_dead(enemy)
+            if enemy_died:
+                self._finish_round(enemy, True)
+                return
+            if await self._do_enemy_counter(cm, enemy):
+                return
+            self._finish_round(enemy, False)
+        finally:
+            self._round_in_progress = False
 
     # ── Flee / dismiss ────────────────────────────────────────────────────
 
     def action_flee(self) -> None:
         """Attempt to flee: end combat, take a small HP penalty (10% max HP)."""
-        if self.engine.state.player.hp <= 0:
+        if self._round_in_progress or self.engine.state.player.hp <= 0:
             return
         state = self.engine.state
         flee_damage = max(1, state.player.max_hp // 10)

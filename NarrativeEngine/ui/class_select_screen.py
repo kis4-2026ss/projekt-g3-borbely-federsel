@@ -5,6 +5,9 @@ the chosen archetype key string (e.g. "fighter"), which app.py forwards to
 engine.archetypes.apply_archetype().
 """
 
+import json
+import os
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
@@ -13,21 +16,25 @@ from textual.widgets import Static
 
 from engine.archetypes import ARCHETYPES
 
-# Human-readable action labels per slot
-_ACTION_LABELS = {
-    "cleave":        "Cleave",
-    "second_wind":   "Second Wind",
-    "defend":        "Defend",
-    "arcane_bolt":   "Arcane Bolt",
-    "mana_shield":   "Mana Shield",
-    "evade":         "Evade",
-    "flurry":        "Flurry",
-    "iron_body":     "Iron Body",
-    "meditate":      "Meditate",
-    "backstab":      "Backstab",
-    "smoke_screen":  "Smoke Screen",
-    "poison_strike": "Poison Strike",
-}
+
+def _build_action_labels() -> dict:
+    """Load action id → display name from combat_actions.json (one-time at import)."""
+    path = os.path.join(os.path.dirname(__file__), "..", "engine", "combat_actions.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        labels: dict = {}
+        for entries in data.values():
+            if isinstance(entries, list):
+                for entry in entries:
+                    if "id" in entry and "name" in entry:
+                        labels[entry["id"]] = entry["name"]
+        return labels
+    except Exception:
+        return {}
+
+
+_ACTION_LABELS = _build_action_labels()
 
 _ARCHETYPE_ORDER = ["fighter", "mage", "monk", "rogue"]
 

@@ -17,6 +17,10 @@ from engine.state_changes import apply_changes
 SUMMARY_REFRESH_TURNS = 8
 SUMMARY_INPUT_LOG_LINES = 16
 
+# Rest is available after defeating 2 minor enemies, or 1 boss (which counts as 2).
+# This gates recovery on actual combat effort, not on passing turns.
+_REST_KILLS_NEEDED = 2
+
 
 # ── State-change visual classification ─────────────────────────────────────
 # Major ops get their own icon + styled line in the game log.
@@ -124,6 +128,7 @@ class ChronosApp(App):
         ("ctrl+a", "quick_attack", "Attack"),
         ("ctrl+e", "open_inventory", "Inventory"),
         ("ctrl+b", "open_combat", "Combat"),
+        ("ctrl+r", "rest", "Rest"),
     ]
 
     def __init__(self, **kwargs):
@@ -152,7 +157,7 @@ class ChronosApp(App):
                         id="player-input",
                     )
                 yield Static(
-                    "^A Attack  ^B Combat  ^E Inventory  ^U Use Item"
+                    "^A Attack  ^B Combat  ^E Inventory  ^U Use Item  ^R Rest"
                     "  ^S Save  ^L Load  ^D Dark  ^Q Quit",
                     id="key-hints-bar",
                 )
@@ -430,6 +435,45 @@ class ChronosApp(App):
             return
         self._open_combat_screen()
 
+    def action_rest(self) -> None:
+        """Short rest — restore HP and class resource.
+
+        Available after defeating 2 minor enemies or 1 boss since the last rest.
+        Cannot be used in combat or while still fresh (0–1 minor kills).
+        """
+        if self._is_dead():
+            return
+        log = self.query_one("#game-log", RichLog)
+        state = self.engine.state
+        if state.in_combat:
+            log.write("[bold red]You cannot rest while in combat.[/]")
+            return
+        n = state.enemies_defeated_since_rest
+        if n < _REST_KILLS_NEEDED:
+            needed = _REST_KILLS_NEEDED - n
+            log.write(
+                f"[yellow]Not weary enough to rest yet. "
+                f"Defeat {needed} more enem{'ies' if needed != 1 else 'y'} first.[/]"
+            )
+            return
+        # Restore HP and class resource
+        p = state.player
+        healed = p.max_hp - p.hp
+        p.hp = p.max_hp
+        resource_msg = ""
+        if p.max_combat_resource > 0:
+            from engine.archetypes import get_resource_info
+            res_name = get_resource_info(p.archetype).get("name", "resource")
+            p.combat_resource = p.max_combat_resource
+            resource_msg = f"  {res_name} restored."
+        state.enemies_defeated_since_rest = 0
+        log.write("")
+        log.write(
+            f"[bold green]✦ Short rest.[/]  [green]+{healed} HP[/] → {p.hp}/{p.max_hp}.{resource_msg}"
+        )
+        log.write("[dim]Defeat 2 enemies (or 1 boss) to rest again.[/]")
+        self.update_ui()
+
     def _open_combat_screen(self) -> None:
         """Push the CombatScreen modal and lock the narrative input while it's open."""
         from ui.combat_screen import CombatScreen
@@ -515,8 +559,14 @@ class ChronosApp(App):
             f"Turn: {state.turn_count}",
             "",
             _hp_bar(p.hp, p.max_hp),
+        ]
+        res_bar = _resource_bar(p)
+        if res_bar:
+            char_lines.append(res_bar)
+        char_lines += [
             _xp_bar(p.experience, p.level),
             f"Gold: [yellow]{p.gold}[/]  AC: [cyan]{p.ac}[/]  Res: {p.bloodline_resonance}",
+            _rest_hint(state),
         ]
         if state.in_combat and state.active_enemies:
             char_lines += ["", "[bold red]⚔ COMBAT[/]"]
@@ -612,6 +662,30 @@ def _xp_bar(experience: int, level: int) -> str:
     empty = 16 - filled
     bar = _styled_segment("█" * filled, "blue") + _styled_segment("░" * empty, "dim")
     return f"XP  {bar} {experience}/{threshold}  Lv.{level}"
+
+
+def _rest_hint(state) -> str:
+    """One-line rest-availability indicator for the sidebar."""
+    n = state.enemies_defeated_since_rest
+    if n >= _REST_KILLS_NEEDED:
+        return "[dim green]^R Rest  (ready)[/]"
+    needed = _REST_KILLS_NEEDED - n
+    return f"[dim]^R Rest  ({needed} kill{'s' if needed != 1 else ''} needed)[/]"
+
+
+def _resource_bar(player: Player) -> str:
+    """Return a coloured resource bar for the sidebar, or '' if the class has none."""
+    if player.max_combat_resource <= 0:
+        return ""
+    from engine.archetypes import get_resource_info
+    res   = get_resource_info(player.archetype)
+    name  = res.get("name", "")
+    color = res.get("color", "yellow")
+    ratio  = player.combat_resource / max(player.max_combat_resource, 1)
+    filled = max(0, min(16, int(ratio * 16)))
+    empty  = 16 - filled
+    bar = _styled_segment("█" * filled, color) + _styled_segment("░" * empty, "dim")
+    return f"{name}  {bar} {player.combat_resource}/{player.max_combat_resource}"
 
 
 def _enemy_hp_bar(enemy: Enemy) -> str:

@@ -24,18 +24,36 @@ def net_advantage(effects: Iterable[StatusEffect]) -> int:
 
 def _award_xp_for_kill(state: GameState, enemy: Enemy) -> int:
     """Award XP for defeating an enemy (25 + level * 25).
-    Handles level-up cascade. Returns the raw XP amount awarded."""
+    Handles level-up cascade with class-specific HP and stat bonuses.
+    Returns the raw XP amount awarded."""
+    from engine.archetypes import get_level_bonus, get_level_unlock
+
     xp = 25 + (enemy.level * 25)
     player = state.player
     player.experience += xp
     while player.experience >= player.xp_to_next_level:
         player.experience -= player.xp_to_next_level
         player.level += 1
-        player.max_hp += 5
-        player.hp = min(player.hp + 5, player.max_hp)
-        state.combat_log.append(
-            f"Level up! Now level {player.level}. Max HP +5."
+        bonus = get_level_bonus(player.archetype, player.level)
+        hp_gain = bonus.get("hp", 5)
+        player.max_hp += hp_gain
+        player.hp = min(player.hp + hp_gain, player.max_hp)
+        for stat, delta in bonus.get("stat_boosts", {}).items():
+            player.stats[stat] = player.stats.get(stat, 10) + delta
+        stat_str = ", ".join(
+            f"{k.title()} +{v}" for k, v in bonus.get("stat_boosts", {}).items()
         )
+        msg = f"Level up! Now level {player.level}. Max HP +{hp_gain}."
+        if stat_str:
+            msg += f" {stat_str}."
+        if bonus.get("note"):
+            msg += f" {bonus['note']}"
+        state.combat_log.append(msg)
+        unlock = get_level_unlock(player.archetype)
+        if unlock and player.level == unlock.get("level"):
+            state.combat_log.append(
+                f"New ability unlocked: [{unlock['slot']}] {unlock['name']}!"
+            )
     return xp
 
 
@@ -611,4 +629,106 @@ class CombatManager:
                 f"Thrown weapon misses (roll {atk.total} vs AC {enemy.ac})."
             )
 
+        return rolls
+
+    # ── Level-3 unlock abilities ──────────────────────────────────────────
+
+    def resolve_battle_cry(self) -> List[DiceRoll]:
+        """Fighter Lv3 — Battle Cry: apply +STR_mod to attack rolls for 2 turns.
+        No enemy counter this turn (pure buff action). Returns empty list."""
+        from .models import StatusEffect
+        player = self.state.player
+        str_mod = player.stat_mod("strength")
+        buff = StatusEffect(
+            name="Battle Cry",
+            duration_turns=2,
+            roll_modifier=str_mod,
+            description=f"War cry — +{str_mod} to attack rolls for 2 turns.",
+        )
+        player.status_effects = [
+            e for e in player.status_effects if e.name != "Battle Cry"
+        ]
+        player.status_effects.append(buff)
+        self.state.combat_log.append(
+            f"Battle Cry! +{str_mod} to attack rolls for 2 turns."
+        )
+        return []
+
+    def resolve_arcane_surge(self, enemy: Enemy) -> List[DiceRoll]:
+        """Mage Lv3 — Arcane Surge: 1d6 HP self-cost, then 3d6 + INT_mod guaranteed
+        damage to enemy (no attack roll, ignores AC)."""
+        player = self.state.player
+        int_mod = player.stat_mod("intelligence")
+        rolls: List[DiceRoll] = []
+
+        cost_roll = dice.roll("1d6", label="Surge Cost (HP)", roll_type="damage")
+        rolls.append(cost_roll)
+        hp_cost = max(1, cost_roll.total)
+        player.take_damage(hp_cost)
+        self.state.combat_log.append(
+            f"Arcane Surge: channelled raw power at a cost of {hp_cost} HP."
+        )
+
+        surge_roll = dice.roll(
+            "3d6", modifier=int_mod,
+            label=f"Arcane Surge → {enemy.name}", roll_type="damage",
+        )
+        rolls.append(surge_roll)
+        actual = max(1, surge_roll.total)
+        enemy.hp = max(0, enemy.hp - actual)
+        self.state.combat_log.append(
+            f"Arcane Surge deals {actual} dmg to {enemy.name} (no attack roll, ignores AC)."
+        )
+        return rolls
+
+    def resolve_ki_strike(self, enemy: Enemy) -> List[DiceRoll]:
+        """Monk Lv3 — Ki Strike: guaranteed hit, 1d8 + WIS_mod + STR_mod damage.
+        No attack roll needed — the blow always lands."""
+        player = self.state.player
+        wis_mod = player.stat_mod("wisdom")
+        str_mod = player.stat_mod("strength")
+        total_mod = wis_mod + str_mod
+
+        dmg_roll = dice.roll(
+            "1d8", modifier=total_mod,
+            label=f"Ki Strike → {enemy.name}", roll_type="damage",
+        )
+        actual = max(1, dmg_roll.total)
+        enemy.hp = max(0, enemy.hp - actual)
+        self.state.combat_log.append(
+            f"Ki Strike — guaranteed hit! {actual} dmg to {enemy.name} "
+            f"(WIS {wis_mod:+d} + STR {str_mod:+d})."
+        )
+        return [dmg_roll]
+
+    def resolve_shadow_step(self, enemy: Enemy) -> List[DiceRoll]:
+        """Rogue Lv3 — Shadow Step: forced-crit attack. +20 modifier guarantees the
+        hit; damage dice doubled (crit=True) for automatic critical damage."""
+        player = self.state.player
+        dex_mod = player.stat_mod("dexterity")
+        prof = player.proficiency_bonus
+        weapon = player.equipped_weapon
+        hit_bonus = dex_mod + prof + (weapon.hit_bonus if weapon else 0) + 20
+        damage_notation = weapon.damage_dice if weapon else "1d4"
+        rolls: List[DiceRoll] = []
+
+        atk = dice.roll(
+            "1d20", modifier=hit_bonus, dc=enemy.ac,
+            label=f"Shadow Step vs {enemy.name}", roll_type="attack",
+        )
+        # Force critical display regardless of natural roll
+        atk.is_critical = True
+        rolls.append(atk)
+
+        dmg = dice.roll(
+            damage_notation, modifier=dex_mod,
+            label=f"Shadow Step dmg → {enemy.name}", roll_type="damage",
+            crit=True,   # doubles dice
+        )
+        rolls.append(dmg)
+        actual = max(1, dmg.total)
+        enemy.hp = max(0, enemy.hp - actual)
+        self.state.combat_log.append(
+            f"Shadow Step — automatic critical! {actual} dmg to {enemy.name} (doubled dice)."
+        )
         return rolls

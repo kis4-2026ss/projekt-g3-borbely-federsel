@@ -126,6 +126,8 @@ class PromptOrchestrator:
             asdict(loc) if loc else {"name": state.current_location, "description": "(unknown)"}
         )
 
+        from engine.archetypes import get_class_loot_profile
+
         p = state.player
         player_info = {
             "name": p.name,
@@ -161,6 +163,7 @@ class PromptOrchestrator:
                 }
                 for e in p.status_effects
             ],
+            "loot_profile": get_class_loot_profile(p.archetype or "", p.level),
         }
 
         combat_info = None

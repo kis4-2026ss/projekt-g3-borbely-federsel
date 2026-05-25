@@ -4,7 +4,7 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 
 
 class IncompatibleSaveError(Exception):
@@ -126,8 +126,10 @@ class Player(Entity):
     gold: int = 0
     experience: int = 0
     status_effects: List[StatusEffect] = field(default_factory=list)
-    temp_ac_bonus: int = 0   # transient — set by Defend action, reset each combat turn
-    archetype: str = ""      # "fighter" | "mage" | "monk" | "rogue" | "" (unset)
+    temp_ac_bonus: int = 0        # transient — set by Defend/Iron Body, reset each turn
+    archetype: str = ""           # "fighter" | "mage" | "monk" | "rogue" | "" (unset)
+    combat_resource: int = 0      # current class resource (Rage/Mana/Ki/Energy)
+    max_combat_resource: int = 0  # 0 = this archetype has no resource system
 
     def stat_mod(self, stat: str) -> int:
         """D&D-style ability modifier: (score - 10) // 2."""
@@ -238,6 +240,7 @@ class GameState:
     npc_exchanges_this_location: int = 0 # transient — dialogue exchanges at current location
     player_approaching: bool = False     # transient — player signalled intent to engage a threat
     in_aftermath: bool = False           # transient — one-turn aftermath flag after combat ends
+    enemies_defeated_since_rest: int = 0  # transient — 2+ = rest available (boss kill counts as 2)
 
     def add_log(self, message: str):
         self.log.append(message)
@@ -280,6 +283,7 @@ class GameState:
         d.pop("npc_exchanges_this_location", None)  # transient
         d.pop("player_approaching", None)           # transient
         d.pop("in_aftermath", None)                 # transient
+        d.pop("enemies_defeated_since_rest", None)  # transient
         d.get("player", {}).pop("temp_ac_bonus", None)  # transient
         return json.dumps(d, indent=2)
 
@@ -344,6 +348,8 @@ class GameState:
         d.pop("npc_exchanges_this_location", None)  # transient — guard for forward compat
         d.pop("player_approaching", None)           # transient — guard for forward compat
         d.pop("in_aftermath", None)                 # transient — guard for forward compat
+        d.pop("enemies_defeated_since_rest", None)  # transient — guard for forward compat
+        d.pop("last_rest_turn", None)               # transient — guard for old saves
 
         return cls(
             player=player,
