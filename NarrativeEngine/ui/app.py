@@ -193,8 +193,19 @@ class ChronosApp(App):
         self.engine.initialize_campaign()
         await self._show_class_select()
         self.update_ui()
-        self.query_one("#player-input").focus()
-        await self.process_narrative("I awaken.")
+        # Disable input while the opening narration is being generated,
+        # then re-enable and focus once the LLM responds.
+        try:
+            self.query_one("#player-input", Input).disabled = True
+        except Exception:
+            pass
+        await self._with_thinking_indicator(self.process_narrative("I awaken."))
+        try:
+            inp = self.query_one("#player-input", Input)
+            inp.disabled = False
+            inp.focus()
+        except Exception:
+            pass
 
     async def _show_class_select(self) -> None:
         """Push the ClassSelectScreen modal and apply the chosen archetype."""
@@ -209,6 +220,46 @@ class ChronosApp(App):
                 pass
 
     # ── Input loop ────────────────────────────────────────────────────────
+
+    # ── Thinking indicator ────────────────────────────────────────────────
+
+    _HINTS_NORMAL = (
+        "^A Attack  ^B Combat  ^E Inventory  ^U Use Item  ^R Rest"
+        "  ^S Save  ^L Load  ^D Dark  ^Q Quit"
+    )
+
+    async def _with_thinking_indicator(self, coro) -> None:
+        """Run *coro* while showing the animated 'Narrator thinking…' spinner
+        in the key-hints bar.  Re-sets the bar to _HINTS_NORMAL when done."""
+        import asyncio as _asyncio
+        _start = _asyncio.get_running_loop().time()
+        _ticking = True
+
+        async def _tick_hints():
+            _dots = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+            _i = 0
+            while _ticking:
+                elapsed = int(_asyncio.get_running_loop().time() - _start)
+                spin = _dots[_i % len(_dots)]
+                try:
+                    self.query_one("#key-hints-bar", Static).update(
+                        f"  [bold yellow]{spin} Narrator thinking… {elapsed}s[/]"
+                    )
+                except Exception:
+                    pass
+                _i += 1
+                await _asyncio.sleep(0.1)
+
+        _tick_task = _asyncio.create_task(_tick_hints())
+        try:
+            await coro
+        finally:
+            _ticking = False
+            _tick_task.cancel()
+            try:
+                self.query_one("#key-hints-bar", Static).update(self._HINTS_NORMAL)
+            except Exception:
+                pass
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         if self.engine.state.player.hp <= 0:
@@ -233,45 +284,12 @@ class ChronosApp(App):
         for name in expired:
             log.write(f"[dim yellow]⏱ {name} faded.[/]")
 
-        # Animated wait indicator — updates the key-hints bar with elapsed seconds.
-        # The task runs concurrently with the HTTP await on the same event loop,
-        # so it ticks even while process_narrative is suspended awaiting the LLM.
-        import asyncio as _asyncio
-        _HINTS_NORMAL = (
-            "^A Attack  ^B Combat  ^E Inventory  ^U Use Item  ^R Rest"
-            "  ^S Save  ^L Load  ^D Dark  ^Q Quit"
-        )
-        _start = _asyncio.get_running_loop().time()
-        _ticking = True
-
-        async def _tick_hints():
-            _dots = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-            _i = 0
-            while _ticking:
-                elapsed = int(_asyncio.get_running_loop().time() - _start)
-                spin = _dots[_i % len(_dots)]
-                try:
-                    self.query_one("#key-hints-bar", Static).update(
-                        f"  [bold yellow]{spin} Narrator thinking… {elapsed}s[/]"
-                    )
-                except Exception:
-                    pass
-                _i += 1
-                await _asyncio.sleep(0.1)
-
-        _tick_task = _asyncio.create_task(_tick_hints())
         try:
-            await self.process_narrative(command)
+            await self._with_thinking_indicator(self.process_narrative(command))
             self.update_ui()
         finally:
-            _ticking = False
-            _tick_task.cancel()
             inp.disabled = False
             inp.placeholder = "What do you do? (e.g., 'examine the gears')"
-            try:
-                self.query_one("#key-hints-bar", Static).update(_HINTS_NORMAL)
-            except Exception:
-                pass
             inp.focus()
 
     async def process_narrative(self, user_input: str) -> None:
@@ -613,7 +631,9 @@ class ChronosApp(App):
         for name in expired:
             log.write(f"[dim yellow]⏱ {name} faded.[/]")
 
-        await self.process_narrative("The enemy has been defeated.")
+        await self._with_thinking_indicator(
+            self.process_narrative("The enemy has been defeated.")
+        )
         self.update_ui()
 
         try:
@@ -646,7 +666,7 @@ class ChronosApp(App):
         expired = state.tick_status_effects()
         for name in expired:
             log.write(f"[dim yellow]⏱ {name} faded.[/]")
-        await self.process_narrative(command)
+        await self._with_thinking_indicator(self.process_narrative(command))
         self.update_ui()
 
     # ── UI refresh ────────────────────────────────────────────────────────
@@ -755,7 +775,7 @@ def _bar(current: int, maximum: int, width: int = 16) -> str:
 
 
 def _hp_bar(current: int, maximum: int) -> str:
-    return f"HP  {_bar(current, maximum)} {current}/{maximum}"
+    return f"{'HP':<6}{_bar(current, maximum)} {current}/{maximum}"
 
 
 def _xp_bar(experience: int, level: int) -> str:
@@ -764,7 +784,7 @@ def _xp_bar(experience: int, level: int) -> str:
     filled = max(0, min(16, int(ratio * 16)))
     empty = 16 - filled
     bar = _styled_segment("█" * filled, "blue") + _styled_segment("░" * empty, "dim")
-    return f"XP  {bar} {experience}/{threshold}  Lv.{level}"
+    return f"{'XP':<6}{bar} {experience}/{threshold}  Lv.{level}"
 
 
 def _rest_hint(state) -> str:
@@ -788,7 +808,7 @@ def _resource_bar(player: Player) -> str:
     filled = max(0, min(16, int(ratio * 16)))
     empty  = 16 - filled
     bar = _styled_segment("█" * filled, color) + _styled_segment("░" * empty, "dim")
-    return f"{name}  {bar} {player.combat_resource}/{player.max_combat_resource}"
+    return f"{name:<6}{bar} {player.combat_resource}/{player.max_combat_resource}"
 
 
 def _enemy_hp_bar(enemy: Enemy) -> str:

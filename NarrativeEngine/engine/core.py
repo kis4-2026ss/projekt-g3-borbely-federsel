@@ -132,6 +132,10 @@ class GameEngine:
     def drop_item(self, item_name: str) -> Tuple[bool, str]:
         if item_name not in self.state.player.inventory:
             return False, f"{item_name} is not in your inventory."
+        # Lore items cannot be dropped — they are narrative artefacts, not gear.
+        item_def = self._lookup_item(item_name)
+        if item_def is not None and item_def.item_type in ("lore", "quest"):
+            return False, f"{item_name} is a lore item and cannot be dropped."
         self.state.player.remove_item(item_name)
         cleared_slot = ""
         if (

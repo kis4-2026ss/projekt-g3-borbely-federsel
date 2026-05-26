@@ -61,6 +61,13 @@ def _remove_item(state: GameState, change: Dict[str, Any]) -> str:
     if not isinstance(item, str):
         raise ValueError("'value' must be a string")
     if item in state.player.inventory:
+        # Lore and quest items are permanent — the LLM cannot remove them.
+        item_def = next(
+            (it for it in state.item_registry.values() if it.name == item),
+            None,
+        )
+        if item_def is not None and item_def.item_type in ("lore", "quest"):
+            return ""  # silently ignore; lore items cannot be removed
         state.player.remove_item(item)
         return f"-{item} (inventory)"
     return ""
@@ -497,6 +504,13 @@ def _define_item(state: GameState, change: Dict[str, Any]) -> str:
         raise ValueError("'id' must be a non-empty string")
     item_id = item_id.strip().lower().replace(" ", "_")
 
+    # Never overwrite a lore or quest item that is already registered —
+    # this prevents the LLM from re-classifying unique items (e.g. Solar Crest)
+    # as a different type on a subsequent turn.
+    existing = state.item_registry.get(item_id)
+    if existing is not None and existing.item_type in ("lore", "quest"):
+        return ""  # silently skip; item is already correctly defined
+
     name = change.get("name", item_id)
     item_type = change.get("item_type", "lore")
     valid_types = {"weapon", "armor", "consumable", "quest", "lore"}
@@ -529,6 +543,10 @@ def _give_defined_item(state: GameState, change: Dict[str, Any]) -> str:
     item = state.item_registry.get(item_id)
     if item is None:
         raise ValueError(f"No item defined with id '{item_id}'. Use define_item first.")
+
+    # Lore and quest items are unique — never give a second copy.
+    if item.item_type in ("lore", "quest") and item.name in state.player.inventory:
+        return ""
 
     state.player.add_item(item.name)
     extra = ""

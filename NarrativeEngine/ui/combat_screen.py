@@ -132,7 +132,7 @@ class CombatScreen(ModalScreen[None]):
     }
 
     #stats-col {
-        width: 30;
+        width: 36;
         background: #1a0a0a;
         border-left: tall $error;
         padding: 0 1;
@@ -176,8 +176,7 @@ class CombatScreen(ModalScreen[None]):
         self._actions: List[_ActionEntry] = []  # merged universal + archetype list
         self._round_in_progress: bool = False # prevents double-fire during async delays
         self._reaction_pending: bool = False  # True while waiting for V/N reaction input
-        self._reaction_choice: str = ""       # "react" | "skip"
-        self._reaction_event: Optional[asyncio.Event] = None  # set by on_key to unblock _prompt_reaction
+        self._reaction_choice: str = ""       # "react" | "skip" | "" (pending)
         self._load_actions()
 
     # ── Action registry ───────────────────────────────────────────────────
@@ -419,7 +418,7 @@ class CombatScreen(ModalScreen[None]):
                 f"[{res_color}]{'█' * res_filled}[/]"
                 + f"[dim]{'░' * (16 - res_filled)}[/]"
             )
-            lines.append(f"  {res_name} {res_bar} {p.combat_resource}/{p.max_combat_resource}")
+            lines.append(f"  {res_name:<6}{res_bar} {p.combat_resource}/{p.max_combat_resource}")
 
         # XP bar
         xp_ratio = min(p.experience / max(p.xp_to_next_level, 1), 1.0)
@@ -428,7 +427,7 @@ class CombatScreen(ModalScreen[None]):
             "[blue]" + "█" * xp_filled + "[/]"
             + "[dim]" + "░" * (16 - xp_filled) + "[/]"
         )
-        lines.append(f"  XP {xp_bar}")
+        lines.append(f"  {'XP':<6}{xp_bar}")
         lines.append(f"  [dim]{p.experience}/{p.xp_to_next_level}  Gold: {p.gold}[/]")
 
         # Status effects
@@ -695,13 +694,9 @@ class CombatScreen(ModalScreen[None]):
     async def _prompt_reaction(self, attack_roll, reaction_def: dict) -> str:
         """Show a reaction prompt and wait for V (react) or N (skip).
 
-        Uses asyncio.Event.wait() — the correct mechanism for suspending a
-        coroutine while keeping the asyncio event loop fully active. The loop
-        stays free to deliver key events to on_key, which sets _reaction_event
-        to unblock this wait.
-
-        30-second timeout auto-skips so the game never hangs if the player
-        walks away or key routing fails for any reason.
+        Uses a polling loop (100 ms ticks, 30 s max) rather than
+        asyncio.Event so the choice is reliably detected regardless of
+        how Textual schedules worker tasks vs. action handlers.
 
         Returns 'react' or 'skip'. _round_in_progress stays True the whole
         time, so action slots [1–5] remain locked while the window is open.
@@ -716,45 +711,34 @@ class CombatScreen(ModalScreen[None]):
         )
         self._set_status(f"React? [V] {name}  [N] Skip", "yellow")
 
-        self._reaction_event = asyncio.Event()
-        self._reaction_choice = "skip"   # default if player ignores the prompt
+        self._reaction_choice = ""   # cleared; action handlers write "react"/"skip"
         self._reaction_pending = True
 
         try:
-            await asyncio.wait_for(self._reaction_event.wait(), timeout=30.0)
-        except asyncio.TimeoutError:
-            self._reaction_choice = "skip"
+            # Poll every 100 ms; give up after 30 s (300 ticks).
+            for _ in range(300):
+                await asyncio.sleep(0.1)
+                if self._reaction_choice:
+                    break
         finally:
             self._reaction_pending = False
-            self._reaction_event = None
 
         self._set_status("", "white")
-        return self._reaction_choice
+        return self._reaction_choice or "skip"
 
     def action_react(self) -> None:
-        """Player pressed V — trigger the pending reaction."""
+        """Player pressed V — register the reaction choice."""
         if self._reaction_pending:
             self._reaction_choice = "react"
-            self._reaction_pending = False
-            if self._reaction_event is not None:
-                self._reaction_event.set()
 
     def action_skip_reaction(self) -> None:
-        """Player pressed N — skip the pending reaction and take full damage."""
+        """Player pressed N — register the skip choice."""
         if self._reaction_pending:
             self._reaction_choice = "skip"
-            self._reaction_pending = False
-            if self._reaction_event is not None:
-                self._reaction_event.set()
 
     def on_key(self, event) -> None:
-        """Directly intercept V/N during the reaction prompt window.
-
-        on_key fires on every Key event delivered to this ModalScreen, before
-        or after the BINDINGS machinery, regardless of what run_worker coroutine
-        is suspended. It calls the action methods which set _reaction_event,
-        immediately unblocking the asyncio.Event.wait() in _prompt_reaction.
-        """
+        """Intercept V/N during the reaction window as a belt-and-braces fallback
+        in case the BINDINGS machinery doesn't fire while a worker is running."""
         if not self._reaction_pending:
             return
         if event.key == "v":
@@ -766,10 +750,14 @@ class CombatScreen(ModalScreen[None]):
 
     # ── Actions ───────────────────────────────────────────────────────────
 
-    async def action_strike(self) -> None:
-        """Standard attack: 1d20 + STR + proficiency vs enemy AC."""
+    def action_strike(self) -> None:
+        """Standard attack: sync dispatcher — runs the round in a worker so the
+        message loop stays free to process V/N reaction key events mid-round."""
         if self._round_in_progress or self._guard():
             return
+        self.run_worker(self._worker_strike(), exclusive=False, name="combat-action")
+
+    async def _worker_strike(self) -> None:
         self._round_in_progress = True
         try:
             from engine.combat import CombatManager
@@ -805,7 +793,7 @@ class CombatScreen(ModalScreen[None]):
         finally:
             self._round_in_progress = False
 
-    async def action_power_strike(self) -> None:
+    async def _do_power_strike(self) -> None:
         """Power Strike: disadvantage to-hit, but double damage dice on hit."""
         if self._round_in_progress or self._guard():
             return
@@ -845,7 +833,7 @@ class CombatScreen(ModalScreen[None]):
         finally:
             self._round_in_progress = False
 
-    async def action_evade(self) -> None:
+    async def _do_evade(self) -> None:
         """Evade: DEX check vs DC 12."""
         if self._round_in_progress or self._guard():
             return
@@ -884,7 +872,7 @@ class CombatScreen(ModalScreen[None]):
         finally:
             self._round_in_progress = False
 
-    async def action_defend(self) -> None:
+    async def _do_defend(self) -> None:
         """Defend: raise AC by 2 + CON mod. If the enemy misses, riposte for free."""
         if self._round_in_progress or self._guard():
             return
@@ -1015,48 +1003,54 @@ class CombatScreen(ModalScreen[None]):
             self._log(f"[yellow]{item.name} used.[/]")
 
     # ── Archetype slot dispatchers ────────────────────────────────────────
+    # All dispatchers are SYNCHRONOUS — they spawn a worker for the async
+    # combat logic so the Textual message loop stays free to process V/N
+    # reaction key events while the round is executing.
 
-    async def action_slot2(self) -> None:
-        self._set_active("2")
+    def action_slot2(self) -> None:
+        if self._round_in_progress or self._guard():
+            return
         arch = self.engine.state.player.archetype
         if arch == "fighter":
-            await self._do_cleave()
+            self.run_worker(self._do_cleave(), exclusive=False, name="combat-action")
         elif arch == "mage":
-            await self._do_arcane_bolt()
+            self.run_worker(self._do_arcane_bolt(), exclusive=False, name="combat-action")
         elif arch == "monk":
-            await self._do_flurry()
+            self.run_worker(self._do_flurry(), exclusive=False, name="combat-action")
         elif arch == "rogue":
-            await self._do_backstab()
+            self.run_worker(self._do_backstab(), exclusive=False, name="combat-action")
         else:
-            await self.action_power_strike()
+            self.run_worker(self._do_power_strike(), exclusive=False, name="combat-action")
 
-    async def action_slot3(self) -> None:
-        self._set_active("3")
+    def action_slot3(self) -> None:
+        if self._round_in_progress or self._guard():
+            return
         arch = self.engine.state.player.archetype
         if arch == "fighter":
-            await self._do_second_wind()
+            self.run_worker(self._do_second_wind(), exclusive=False, name="combat-action")
         elif arch == "mage":
-            await self._do_mana_shield()
+            self.run_worker(self._do_mana_shield(), exclusive=False, name="combat-action")
         elif arch == "monk":
-            await self._do_iron_body()
+            self.run_worker(self._do_iron_body(), exclusive=False, name="combat-action")
         elif arch == "rogue":
-            await self._do_smoke_screen()
+            self.run_worker(self._do_smoke_screen(), exclusive=False, name="combat-action")
         else:
-            await self.action_evade()
+            self.run_worker(self._do_evade(), exclusive=False, name="combat-action")
 
-    async def action_slot4(self) -> None:
-        self._set_active("4")
+    def action_slot4(self) -> None:
+        if self._round_in_progress or self._guard():
+            return
         arch = self.engine.state.player.archetype
         if arch == "mage":
-            await self.action_evade()
+            self.run_worker(self._do_evade(), exclusive=False, name="combat-action")
         elif arch == "monk":
-            await self._do_meditate()
+            self.run_worker(self._do_meditate(), exclusive=False, name="combat-action")
         elif arch == "rogue":
-            await self._do_poison_strike()
+            self.run_worker(self._do_poison_strike(), exclusive=False, name="combat-action")
         else:
-            await self.action_defend()
+            self.run_worker(self._do_defend(), exclusive=False, name="combat-action")
 
-    async def action_slot5(self) -> None:
+    def action_slot5(self) -> None:
         """Dispatch the level-3 archetype unlock ability, or show a locked message."""
         from engine.archetypes import get_level_unlock
         state = self.engine.state
@@ -1071,13 +1065,13 @@ class CombatScreen(ModalScreen[None]):
         self._set_active("5")
         arch = state.player.archetype
         if arch == "fighter":
-            await self._do_battle_cry()
+            self.run_worker(self._do_battle_cry(), exclusive=False, name="combat-action")
         elif arch == "mage":
-            await self._do_arcane_surge()
+            self.run_worker(self._do_arcane_surge(), exclusive=False, name="combat-action")
         elif arch == "monk":
-            await self._do_ki_strike()
+            self.run_worker(self._do_ki_strike(), exclusive=False, name="combat-action")
         elif arch == "rogue":
-            await self._do_shadow_step()
+            self.run_worker(self._do_shadow_step(), exclusive=False, name="combat-action")
 
     # ── Fighter actions ───────────────────────────────────────────────────
 
@@ -1645,7 +1639,8 @@ def _bar(current: int, maximum: int, width: int = 16) -> str:
 
 
 def _hp_bar(current: int, maximum: int, label: str = "HP") -> str:
-    return f"  {label} {_bar(current, maximum)} {current}/{maximum}"
+    # 6-char label field keeps HP / XP / Mana / Rage / Ki / Energy all aligned.
+    return f"  {label:<6}{_bar(current, maximum)} {current}/{maximum}"
 
 
 def _format_roll_line(roll) -> str:

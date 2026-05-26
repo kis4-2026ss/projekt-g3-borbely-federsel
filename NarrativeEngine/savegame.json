@@ -1,43 +1,45 @@
 {
   "player": {
     "name": "Aurelian Exile",
-    "hp": 24,
-    "max_hp": 24,
+    "hp": 20,
+    "max_hp": 20,
     "level": 1,
     "inventory": [
       "Rusted Shortsword",
       "Patched Leather",
       "Health Potion",
       "Traveler's Cloak",
-      "Ironclad Sword",
-      "Chainmail"
+      "Twin Daggers",
+      "Scoundrel Leathers",
+      "Smoke Bomb",
+      "Bandage Wrap"
     ],
     "lineage": "Aurelian Bloodline",
     "bloodline_resonance": 0,
     "stats": {
-      "strength": 15,
-      "dexterity": 10,
-      "intelligence": 8,
-      "constitution": 14,
+      "strength": 9,
+      "dexterity": 15,
+      "intelligence": 11,
+      "constitution": 10,
       "wisdom": 10,
-      "charisma": 9
+      "charisma": 11
     },
     "equipped_weapon": {
-      "name": "Ironclad Sword",
-      "damage_dice": "1d8",
+      "name": "Twin Daggers",
+      "damage_dice": "1d6",
       "hit_bonus": 2,
-      "damage_type": "slashing",
-      "description": "Starting gear for Fighter."
+      "damage_type": "piercing",
+      "description": "Starting gear for Rogue."
     },
     "equipped_armor": {
-      "name": "Chainmail",
-      "ac_bonus": 4,
-      "description": "Starting gear for Fighter."
+      "name": "Scoundrel Leathers",
+      "ac_bonus": 2,
+      "description": "Starting gear for Rogue."
     },
     "gold": 0,
     "experience": 0,
     "status_effects": [],
-    "archetype": "fighter",
+    "archetype": "rogue",
     "combat_resource": 3,
     "max_combat_resource": 3
   },
@@ -71,7 +73,7 @@
         "elowen",
         "spire"
       ],
-      "timestamp": "2026-05-25T16:01:21.883546"
+      "timestamp": "2026-05-26T22:52:03.656189"
     }
   ],
   "session_summary": "",
@@ -119,14 +121,17 @@
       "id": "health_potion",
       "name": "Health Potion",
       "item_type": "consumable",
-      "description": "Starting gear for Fighter.",
+      "description": "A vial of glowing blue liquid. Tastes of copper and rain.",
       "value_gold": 0,
       "damage_dice": null,
       "hit_bonus": 0,
       "damage_type": "slashing",
       "ac_bonus": 0,
-      "heal_amount": 15,
-      "tags": []
+      "heal_amount": 8,
+      "tags": [
+        "consumable",
+        "starter"
+      ]
     },
     "travelers_cloak": {
       "id": "travelers_cloak",
@@ -144,30 +149,58 @@
         "starter"
       ]
     },
-    "ironclad_sword": {
-      "id": "ironclad_sword",
-      "name": "Ironclad Sword",
+    "twin_daggers": {
+      "id": "twin_daggers",
+      "name": "Twin Daggers",
       "item_type": "weapon",
-      "description": "Starting gear for Fighter.",
+      "description": "Starting gear for Rogue.",
       "value_gold": 0,
-      "damage_dice": "1d8",
+      "damage_dice": "1d6",
       "hit_bonus": 2,
-      "damage_type": "slashing",
+      "damage_type": "piercing",
       "ac_bonus": 0,
       "heal_amount": 0,
       "tags": []
     },
-    "chainmail": {
-      "id": "chainmail",
-      "name": "Chainmail",
+    "scoundrel_leathers": {
+      "id": "scoundrel_leathers",
+      "name": "Scoundrel Leathers",
       "item_type": "armor",
-      "description": "Starting gear for Fighter.",
+      "description": "Starting gear for Rogue.",
       "value_gold": 0,
       "damage_dice": null,
       "hit_bonus": 0,
       "damage_type": "slashing",
-      "ac_bonus": 4,
+      "ac_bonus": 2,
       "heal_amount": 0,
+      "tags": []
+    },
+    "smoke_bomb": {
+      "id": "smoke_bomb",
+      "name": "Smoke Bomb",
+      "item_type": "combat",
+      "description": "Starting gear for Rogue.",
+      "value_gold": 0,
+      "damage_dice": null,
+      "hit_bonus": 0,
+      "damage_type": "slashing",
+      "ac_bonus": 0,
+      "heal_amount": 0,
+      "tags": [
+        "enemy_disadvantage"
+      ]
+    },
+    "bandage_wrap": {
+      "id": "bandage_wrap",
+      "name": "Bandage Wrap",
+      "item_type": "consumable",
+      "description": "Starting gear for Rogue.",
+      "value_gold": 0,
+      "damage_dice": null,
+      "hit_bonus": 0,
+      "damage_type": "slashing",
+      "ac_bonus": 0,
+      "heal_amount": 12,
       "tags": []
     }
   }

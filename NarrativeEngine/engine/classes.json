@@ -205,7 +205,7 @@
     },
     "resource": {
       "name": "Energy",
-      "color": "green",
+      "color": "#ff8c00",
       "max": 3,
       "regen_per_round": 1,
       "start_at_max": true,
