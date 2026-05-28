@@ -313,6 +313,19 @@ class ChronosApp(App):
 
         change_records = apply_changes(state, parsed.state_changes)
 
+        # ── Engine-side encounter enforcement ────────────────────────────────
+        # If the LLM failed to emit spawn_encounter despite being in encounter
+        # mode past the arrival beat, force it deterministically.
+        if (
+            not state.in_combat
+            and state.last_narrative_mode == "encounter"
+            and (state.turn_count - state.phase_entered_turn) >= 1
+        ):
+            pending = [t for t in state.encounter_registry.values() if not t.spawned]
+            if pending:
+                forced = apply_changes(state, [{"op": "spawn_encounter", "id": pending[0].id}])
+                change_records.extend(forced)
+
         # Record LLM-emitted plot point (display happens further down)
         llm_plot_event: str = ""
         if parsed.plot_point:

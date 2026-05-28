@@ -1,7 +1,7 @@
 {
   "player": {
     "name": "Aurelian Exile",
-    "hp": 15,
+    "hp": 24,
     "max_hp": 24,
     "level": 1,
     "inventory": [
@@ -10,8 +10,7 @@
       "Health Potion",
       "Traveler's Cloak",
       "Ironclad Sword",
-      "Chainmail",
-      "Silver Ring"
+      "Chainmail"
     ],
     "lineage": "Aurelian Bloodline",
     "bloodline_resonance": 0,
@@ -36,10 +35,10 @@
       "description": "Starting gear for Fighter."
     },
     "gold": 0,
-    "experience": 50,
+    "experience": 0,
     "status_effects": [],
     "archetype": "fighter",
-    "combat_resource": 2,
+    "combat_resource": 3,
     "max_combat_resource": 3
   },
   "schema_version": 6,
@@ -52,84 +51,16 @@
         "The Shattered Plaza"
       ],
       "interactables": []
-    },
-    "The Shattered Plaza": {
-      "name": "The Shattered Plaza",
-      "description": "A ruined plaza at the heart of the Outpost where the Weeping Guardian stands guard.",
-      "connections": [],
-      "interactables": []
     }
   },
-  "quests": {
-    "weeping_guardian": {
-      "name": "The Weeping Guardian",
-      "description": "An ancient construct stands vigil over the ruins. What does it guard?",
-      "objectives": [
-        "Locate the Weeping Guardian in the Shattered Plaza",
-        "Find a way to soothe or dismantle the Guardian",
-        "Retrieve the Solar Crest"
-      ],
-      "completed_objectives": [],
-      "status": "active",
-      "metadata": {
-        "guidelines": "The Guardian reacts to the player's blood. Pacification is possible through resonance. The Solar Crest is the reward."
-      }
-    },
-    "ring_of_blood": {
-      "name": "The Silver Ring",
-      "description": "The bandit wore a ring. Who did it belong to? Is it valuable?",
-      "objectives": [
-        "Examine the silver ring",
-        "Determine its origin or purpose"
-      ],
-      "completed_objectives": [],
-      "status": "active",
-      "metadata": {
-        "guidelines": "The ring may be connected to other bandits, or to the history of the outpost."
-      }
-    }
-  },
-  "npcs": {
-    "maren": {
-      "name": "Maren",
-      "location": "The Overgrown Outpost",
-      "disposition": 20,
-      "is_known": true,
-      "metadata": {}
-    }
-  },
+  "quests": {},
+  "npcs": {},
   "world": {
-    "time_of_day": "Dawn",
+    "time_of_day": "Morning",
     "weather": "Ethereal Mist",
     "flags": {}
   },
-  "log": [
-    "NARRATOR: Ethereal mist clings to your face. The rusted locket in your hand is strangely warm. You're slumped in a collapsed stall. Through the gaps in the stone, you see the Needle\u2014a shard of crystal spire that bleeds blue-white light into the mud. At the well, Elder Maren watches the water, which has smelled foul for a week. She turns. \"It remembers,\" she says.",
-    "PLAYER: Elder whats this thing",
-    "NARRATOR: Maren flinches. The well water sloshes as she turns away from you. Her eyes dart to the spire, then back. A crow caws from the ruined stall nearby, too loud. \"The Needle,\" she whispers, voice cracking. She coughs into a dirt-stained rag. Maren retreats toward her hut, shaking her head.",
-    "PLAYER: a bandit attacks me",
-    "NARRATOR: Maren shivers, pulling her shawl tighter. The smell of rot from the well hangs stagnant in the air. She gestures vaguely toward the plaza, eyes wide. \"Leave me be.\" Before you can react, a hulking figure bursts from a nearby hut, rusted axe raised. \"Yours now!\"",
-    "COMBAT: Bandit has been defeated! Gained 50 XP.",
-    "COMBAT: The enemy has been defeated.",
-    "NARRATOR: The bandit lies still, face down in the mud. The well water reeks, the rot smell stronger than before. You notice a crude silver ring on the bandit's finger, glinting in the dawn light. Further in the outpost, a shutter bangs in the wind.",
-    "PLAYER: ez clapped yo ass, dumbass bandit",
-    "NARRATOR: Maren stares at the corpse, jaw slack. The wind gusts, carrying the clatter of loose stone from the spire overhead. She turns away, wringing her hands. \"Fools. He knew the risk.\" Her gaze flicks toward you and then down. She shuffles into her hut, slamming the door.",
-    "PLAYER: i look at the silver ring wondering what its for",
-    "NARRATOR: The ring is cold in your hand, heavier than it looks. Its band is unadorned silver, dull with tarnish. But the bezel holds a blood-red stone carved with a familiar crest: a stylized sunburst, split and weeping. You feel a tug, deep behind your ribs. In the distance, a dog barks \u2014 once, sharp and sudden.",
-    "PLAYER: i investigate the barking",
-    "NARRATOR: The dog's bark echoes from the plaza to the south. The hairs on your neck prickle. Maren's door remains shut. The blood-red ring warms in your palm. Another bark, closer now. Something is moving toward the outpost.",
-    "PLAYER: i crouch and try to hide from the threat",
-    "NARRATOR: The dog's barking stops. You hear heavy footfalls crunching on stone, approaching from the ruined plaza. Maren's door creaks open a sliver, her eye peering out. The ring pulses faintly against your skin. A voice, cold and mechanical, echoes through the outpost: \"Show yourself.\"",
-    "PLAYER: what do you want fatass",
-    "NARRATOR: The mechanical voice booms again, closer. \"You carry something old.\" Maren slams her door shut. Rustling sounds fill the space above you. Something shifts on the cracked crystal spire \u2014 a shadow detaching itself from the stone. It drops to the ground with a heavy thud.",
-    "PLAYER: yes and",
-    "NARRATOR: The construct's shadow resolves into a towering figure of dark metal, its joints hissing with steam. A single crimson eye flares to life in its faceless helm. The air smells of ozone and burnt stone. It plants a foot, the flagstones cracking under its weight. \"This place is not yours.\"",
-    "PLAYER: i didnt choose to come here",
-    "NARRATOR: The guardian's crimson eye narrows. Oil drips from its gauntlet as it clenches a massive fist. The wind picks up around the spire, whistling through cracks in the crystal. It takes another step toward you, each footfall shaking the ground. \"Leave.\"",
-    "PLAYER: who are you to tell me that",
-    "NARRATOR: The Weeping Guardian's head tilts slightly, a barely perceptible movement in the dim light. A low growl emanates from its metallic throat, vibrating the ground beneath your feet. Cracks spiderweb across the flagstones with each pulse of energy. \"Flee.\"",
-    "COMBAT: You fled the battle, taking 2 damage."
-  ],
+  "log": [],
   "story_history": [
     {
       "event": "Awakening in the ruins of Elowen",
@@ -140,68 +71,17 @@
         "elowen",
         "spire"
       ],
-      "timestamp": "2026-05-27T22:57:56.865268"
-    },
-    {
-      "event": "Awakening in the ruins of Elowen",
-      "choice_made": "Opened eyes in the Overgrown Outpost",
-      "tags": [
-        "bloodline",
-        "awakening",
-        "elowen",
-        "spire"
-      ],
-      "timestamp": "2026-05-27T22:58:03.378739"
+      "timestamp": "2026-05-28T17:39:19.189169"
     }
   ],
-  "session_summary": "Maren, wary of the Needle spire, directed the player away before a bandit attacked. After defeating the bandit and looting a silver ring bearing a weeping sunburst crest, the player felt a tug and heard a dog bark. Investigating the sound, the player hid as a mechanical voice demanded they reveal themselves, claiming they carried something old. A shadow detached from the spire, dropping to the ground as Maren retreated inside, leaving the player facing an unknown threat.",
-  "summary_anchor_turn": 8,
-  "turn_count": 11,
+  "session_summary": "",
+  "summary_anchor_turn": 0,
+  "turn_count": 0,
   "metadata": {},
   "in_combat": false,
   "active_enemies": [],
-  "combat_log": [
-    "Combat started. You act first.",
-    "Weeping Guardian misses player (natural 1 \u2014 fumble!) (roll 6 vs AC 14)",
-    "Player hits Weeping Guardian for 4 dmg (roll 16 vs AC 15)",
-    "Player hits Weeping Guardian for 3 dmg (roll 22 vs AC 15)",
-    "Weeping Guardian misses player (roll 13 vs AC 14)",
-    "Player misses Weeping Guardian (roll 13 vs AC 15)",
-    "Weeping Guardian hits player for 7 dmg (roll 20 vs AC 14)",
-    "Player fled! Took 2 damage escaping."
-  ],
-  "encounter_registry": {
-    "weeping_guardian": {
-      "id": "weeping_guardian",
-      "name": "Weeping Guardian",
-      "description": "A towering construct of Aurelian metal, weeping fluid from its eyesockets.",
-      "enemy": {
-        "name": "Weeping Guardian",
-        "hp": 65,
-        "max_hp": 65,
-        "ac": 15,
-        "attack_bonus": 5,
-        "damage_dice": "2d6",
-        "damage_bonus": 2,
-        "level": 3
-      },
-      "xp_reward": 0,
-      "gold_reward": 30,
-      "item_rewards": [
-        "Solar Crest"
-      ],
-      "narrative_flavor": "The Guardian attacks with slow, deliberate strikes. Its weeping fluid weakens you.",
-      "defeat_condition": "soothe",
-      "quest_id": "weeping_guardian",
-      "tags": [
-        "construct",
-        "ancient",
-        "guardian"
-      ],
-      "is_boss": true,
-      "spawned": true
-    }
-  },
+  "combat_log": [],
+  "encounter_registry": {},
   "item_registry": {
     "rusted_shortsword": {
       "id": "rusted_shortsword",
@@ -289,38 +169,6 @@
       "ac_bonus": 4,
       "heal_amount": 0,
       "tags": []
-    },
-    "solar_crest": {
-      "id": "solar_crest",
-      "name": "Solar Crest",
-      "item_type": "lore",
-      "description": "A disc of pale gold Aurelian metal engraved with a sunburst \u2014 it hums faintly with residual resonance.",
-      "value_gold": 0,
-      "damage_dice": null,
-      "hit_bonus": 0,
-      "damage_type": "slashing",
-      "ac_bonus": 0,
-      "heal_amount": 0,
-      "tags": [
-        "lore",
-        "aurelian",
-        "unique"
-      ]
-    },
-    "mana_shard": {
-      "id": "mana_shard",
-      "name": "Mana Shard",
-      "item_type": "lore",
-      "description": "A small shard of Aurelian crystal resonating with faint energy.",
-      "value_gold": 10,
-      "damage_dice": null,
-      "hit_bonus": 0,
-      "damage_type": "slashing",
-      "ac_bonus": 0,
-      "heal_amount": 0,
-      "tags": [
-        "aurelian"
-      ]
     }
   }
 }

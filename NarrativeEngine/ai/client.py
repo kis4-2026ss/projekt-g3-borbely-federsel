@@ -20,7 +20,7 @@ class AIClient:
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         self.api_key = api_key or os.getenv("LLM_API_KEY") or os.getenv("GITHUB_TOKEN")
-        self.model = model or os.getenv("LLM_MODEL", "gpt-4o-mini")
+        self.model = model or os.getenv("LLM_MODEL", "gpt-4.1-mini")
         self.api_url = os.getenv("LLM_API_URL", self.DEFAULT_URL)
         # Persistent client — reuses the TCP+TLS connection across calls.
         # keepalive_expiry=15s: drop idle connections before the Azure server
@@ -54,7 +54,7 @@ class AIClient:
             "messages": payload,
             "model": self.model,
             "temperature": 0.8,
-            "max_tokens": 900,
+            "max_tokens": 1800,
             "top_p": 1,
         }
         if json_mode:

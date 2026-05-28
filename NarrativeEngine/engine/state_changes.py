@@ -592,6 +592,7 @@ def _move_to(state: GameState, change: Dict[str, Any]) -> str:
     state.location_entered_turn = state.turn_count   # reset scene clock
     state.player_approaching = False                 # travel cancels a declared approach
     state.npc_exchanges_this_location = 0            # fresh dialogue budget at new location
+    state.npc_exchange_counts = {}                   # reset per-NPC counts at new location
     return f"moved to {name}"
 
 
@@ -720,8 +721,6 @@ def _add_npc(state: GameState, change: Dict[str, Any]) -> str:
     location = change.get("location")
     if not isinstance(location, str) or not location.strip():
         location = state.current_location
-    disposition = _coerce_int(change.get("disposition", 50), field="disposition")
-    disposition = max(0, min(100, disposition))
     key = _npc_key(name)
     if key in state.npcs:
         state.npcs[key].is_known = True
@@ -729,24 +728,9 @@ def _add_npc(state: GameState, change: Dict[str, Any]) -> str:
     state.npcs[key] = NPC(
         name=name.strip(),
         location=location.strip(),
-        disposition=disposition,
         is_known=True,
     )
     return f"NPC met: {name.strip()}"
-
-
-def _update_npc_disposition(state: GameState, change: Dict[str, Any]) -> str:
-    name = change.get("name")
-    if not isinstance(name, str):
-        raise ValueError("'name' must be a string")
-    delta = _coerce_int(change.get("delta"), field="delta")
-    key = _npc_key(name)
-    if key not in state.npcs:
-        raise ValueError(f"unknown NPC '{name}'")
-    npc = state.npcs[key]
-    npc.disposition = max(0, min(100, npc.disposition + delta))
-    sign = "+" if delta >= 0 else ""
-    return f"{npc.name}: disposition {sign}{delta} → {npc.disposition}"
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -814,7 +798,6 @@ _HANDLERS = {
     "fail_quest": _fail_quest,
     # npcs
     "add_npc": _add_npc,
-    "update_npc_disposition": _update_npc_disposition,
     # activity / approach
     "set_player_approaching": _set_player_approaching,
 }
@@ -885,8 +868,7 @@ QUESTS
 - {"op":"fail_quest","quest_id":"<id>"}
 
 NPCS
-- {"op":"add_npc","name":"<name>","location":"<location>","disposition":<0-100>}
-- {"op":"update_npc_disposition","name":"<NPC name>","delta":<int>}
+- {"op":"add_npc","name":"<name>","location":"<location>"}
 
 ACTIVITY / APPROACH
 - {"op":"set_player_approaching"}
@@ -894,9 +876,12 @@ ACTIVITY / APPROACH
   known threat: "I approach", "I walk toward", "I confront it", "Let's fight", "I go in",
   "I charge", "I attack".
   For INTELLIGENT encounter entities (is_boss:true or tagged construct/sapient/ancient):
-    Do NOT emit on the first or second exchange — those entities get up to 2 brief verbal
-    responses before combat. Emit set_player_approaching (then spawn_encounter) after the
-    second exchange OR the moment the player signals physical aggression or approach.
+    In CHRONICLE/DIALOGUE mode (before this op is emitted), allow up to 2 brief verbal
+    exchanges. Emit set_player_approaching after those exchanges OR immediately when the
+    player signals physical aggression or direct approach.
+    Once set_player_approaching is emitted, narrative_mode becomes "encounter" next turn.
+    In ENCOUNTER mode: the arrival beat fires at phase_turn 0 ONLY. At phase_turn >= 1
+    you MUST emit spawn_encounter — that rule overrides everything else in this entry.
   For MINOR enemies (goblins, wolves, bandits — is_boss:false, no special tags):
     Emit immediately on any interaction. No dialogue; one physical reaction, then spawn.
   Do NOT emit for abstract curiosity about the world or distant observation — only for
