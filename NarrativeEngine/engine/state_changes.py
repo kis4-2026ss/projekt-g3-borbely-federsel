@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Tuple
 
 from .models import (
     Armor, Enemy, EncounterTemplate, GameState, ItemDefinition,
-    Location, Merchant, MerchantItem, NPC, Quest, StatusEffect, Weapon,
+    Location, NPC, Quest, StatusEffect, Weapon,
 )
 from .combat import CombatManager
 from . import dice
@@ -749,88 +749,6 @@ def _update_npc_disposition(state: GameState, change: Dict[str, Any]) -> str:
     return f"{npc.name}: disposition {sign}{delta} → {npc.disposition}"
 
 
-# ── Merchant ops ──────────────────────────────────────────────────────────
-
-def _add_merchant(state: GameState, change: Dict[str, Any]) -> str:
-    name = change.get("name")
-    if not isinstance(name, str) or not name.strip():
-        raise ValueError("'name' must be a non-empty string")
-    key = _npc_key(name)
-    location = change.get("location", state.current_location)
-    if not isinstance(location, str) or not location.strip():
-        location = state.current_location
-    greeting = change.get("greeting", "Welcome, traveller. Browse my wares.")
-    if not isinstance(greeting, str):
-        greeting = "Welcome, traveller. Browse my wares."
-
-    raw_stock = change.get("stock", [])
-    if not isinstance(raw_stock, list):
-        raw_stock = []
-    stock: List[MerchantItem] = []
-    for entry in raw_stock:
-        if not isinstance(entry, dict):
-            continue
-        item_name = entry.get("item_name", "")
-        if not isinstance(item_name, str) or not item_name.strip():
-            continue
-        try:
-            price = max(0, _coerce_int(entry.get("price", 10), field="price"))
-            quantity = _coerce_int(entry.get("quantity", -1), field="quantity")
-        except (ValueError, TypeError):
-            price, quantity = 10, -1
-        item_id = entry.get("item_id") or ""
-        description = entry.get("description") or ""
-        stock.append(MerchantItem(
-            item_name=item_name.strip(),
-            price=price,
-            quantity=quantity,
-            item_id=item_id.strip() if isinstance(item_id, str) else "",
-            description=description.strip() if isinstance(description, str) else "",
-        ))
-
-    state.merchants[key] = Merchant(
-        name=name.strip(),
-        location=location.strip(),
-        greeting=greeting,
-        stock=stock,
-        npc_key=key,
-    )
-    # Ensure merchant also appears in the NPC roster for dialogue context
-    if key not in state.npcs:
-        state.npcs[key] = NPC(
-            name=name.strip(),
-            location=location.strip(),
-            disposition=70,
-            is_known=True,
-        )
-    else:
-        state.npcs[key].is_known = True
-    return f"merchant appeared: {name.strip()} ({len(stock)} item{'s' if len(stock) != 1 else ''})"
-
-
-def _open_shop(state: GameState, change: Dict[str, Any]) -> str:
-    """Signal the UI to open the merchant shop screen.
-
-    Sets state.pending_shop to the merchant's key.  The UI reads this flag
-    after apply_changes returns and opens the MerchantModal automatically.
-    """
-    name = change.get("name", "")
-    if isinstance(name, str) and name.strip():
-        key = _npc_key(name)
-        if key in state.merchants:
-            state.pending_shop = key
-            return f"shop opened: {state.merchants[key].name}"
-        raise ValueError(
-            f"No merchant named '{name}'. Use add_merchant first."
-        )
-    # Fall back to the first merchant at the current location
-    for key, merchant in state.merchants.items():
-        if merchant.location == state.current_location:
-            state.pending_shop = key
-            return f"shop opened: {merchant.name}"
-    raise ValueError("No merchant at the current location.")
-
-
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 def _coerce_int(value: Any, *, field: str) -> int:
@@ -897,9 +815,6 @@ _HANDLERS = {
     # npcs
     "add_npc": _add_npc,
     "update_npc_disposition": _update_npc_disposition,
-    # merchants
-    "add_merchant": _add_merchant,
-    "open_shop": _open_shop,
     # activity / approach
     "set_player_approaching": _set_player_approaching,
 }
@@ -972,17 +887,6 @@ QUESTS
 NPCS
 - {"op":"add_npc","name":"<name>","location":"<location>","disposition":<0-100>}
 - {"op":"update_npc_disposition","name":"<NPC name>","delta":<int>}
-
-MERCHANTS
-- {"op":"add_merchant","name":"<name>","location":"<location>","greeting":"<text>","stock":[{"item_name":"<name>","price":<int>,"quantity":<int|-1>,"item_id":"<slug_or_empty>","description":"<text>"}]}
-  Define a merchant NPC at a location with a shop inventory. Use quantity -1 for unlimited stock.
-  Pair with add_npc if you want the merchant to appear in dialogue context too.
-  Set item_id to the item_registry slug if the item was defined via define_item (gives it full mechanical properties on purchase).
-  Emit add_merchant once when the player first encounters the merchant; re-emitting updates the stock.
-- {"op":"open_shop","name":"<merchant name>"}
-  Signal the UI to open the shop screen for a previously-defined merchant.
-  ONLY emit when the player explicitly asks to trade, buy, browse wares, or directly interacts with a merchant.
-  Do NOT emit speculatively — wait for explicit player intent.
 
 ACTIVITY / APPROACH
 - {"op":"set_player_approaching"}

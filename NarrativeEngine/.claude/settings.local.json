@@ -8,7 +8,10 @@
       "PowerShell(.venv\\\\Scripts\\\\python.exe -c \"import py_compile; [py_compile.compile\\(p, doraise=True\\) for p in ['main.py','engine/models.py','engine/state_changes.py','engine/core.py','engine/exploration.py','engine/combat.py','ai/client.py','ai/parser.py','ai/orchestrator.py','ui/app.py']]; print\\('all modules compile'\\)\")",
       "Bash(python *)",
       "Bash(xargs grep -l \"ModalScreen\")",
-      "Bash(Get-ChildItem C:\\\\Dev\\\\KIL\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\\\\data *)"
+      "Bash(Get-ChildItem C:\\\\Dev\\\\KIL\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\\\\data *)",
+      "Bash(Get-ChildItem engine/*.py, ui/*.py, ai/*.py, main.py -ErrorAction SilentlyContinue)",
+      "Bash(Select-String -Pattern \"TODO|FIXME|XXX|HACK|BUG|stub|WIP\")",
+      "Bash(Select-Object Path, LineNumber, Line)"
     ]
   }
 }

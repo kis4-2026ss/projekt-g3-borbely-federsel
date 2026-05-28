@@ -76,23 +76,25 @@ class PromptOrchestrator:
         """Derive the narrative mode from the current activity.
 
         chronicle  — default exploration / dialogue; slow clock (4-5 turns/zone)
-        encounter  — player declared approach OR 5-turn zone backstop fires
+        encounter  — player declared approach OR zone backstop fires (exploration only)
         combat     — in_combat is True; CombatScreen modal is active
         aftermath  — one-turn mode immediately after combat ends
 
-        Critical change from the old implementation: encounter mode no longer
-        fires just because an unspawned encounter exists nearby. Only an explicit
-        player approach (set_player_approaching op) or the 5-turn backstop trigger it.
+        The zone-clock backstop is paused during dialogue — a fight cannot break
+        out mid-conversation from the clock alone. Only an explicit player approach
+        (set_player_approaching op) or the backstop while exploring triggers it.
         """
         if activity in ("combat", "aftermath"):
             return activity
         if activity == "approach":
             return "encounter"
-        # Hard backstop: 5 turns in a zone with pending encounters → force escalation
-        turns_at_loc = state.turn_count - state.location_entered_turn
-        pending_enc = [t for t in state.encounter_registry.values() if not t.spawned]
-        if pending_enc and turns_at_loc >= 5:
-            return "encounter"
+        # Backstop: 8 turns exploring a zone with pending encounters → force escalation.
+        # Does NOT fire during dialogue — the player must finish (or leave) the conversation first.
+        if activity != "dialogue":
+            turns_at_loc = state.turn_count - state.location_entered_turn
+            pending_enc = [t for t in state.encounter_registry.values() if not t.spawned]
+            if pending_enc and turns_at_loc >= 8:
+                return "encounter"
         return "chronicle"
 
     # ── Context assembly ───────────────────────────────────────────────────
@@ -238,8 +240,9 @@ class PromptOrchestrator:
             "narrative_mode": _mode,                        # "chronicle"|"encounter"|"combat"|"aftermath"
             "activity": _activity,                          # "exploring"|"dialogue"|"approach"|"combat"|"aftermath"
             "turns_in_activity": turns_in_activity,         # turns spent in the current activity
-            "npc_exchanges_this_location": state.npc_exchanges_this_location,
-            "npc_exchanges_remaining": max(0, 4 - state.npc_exchanges_this_location),
+            # NPC dialogue budget — dual soft-cap system (see chronicle_mode rules)
+            "npc_exchanges_this_location": state.npc_exchanges_this_location,  # location-wide total (cap ~8)
+            "npc_exchange_counts": dict(state.npc_exchange_counts),             # per-NPC counts (cap ~6)
             "phase_turn": _phase_turn,                      # turns spent in current narrative_mode
             "turns_at_current_location": turns_at_location,
             "turns_since_last_encounter": turns_since_last_enc,
@@ -397,9 +400,18 @@ class PromptOrchestrator:
             state.activity_entered_turn = state.turn_count
             state.current_activity = activity
 
-        # Dialogue exchange counter: increment every turn spent talking to an NPC.
+        # Dialogue exchange counters: increment every turn spent talking to an NPC.
+        # Both the location-wide total and the per-NPC count are tracked.
         if activity == "dialogue":
             state.npc_exchanges_this_location += 1
+            local_known_npcs = [
+                npc for npc in state.npcs.values()
+                if npc.location == state.current_location and npc.is_known
+            ]
+            for npc in local_known_npcs:
+                from engine.state_changes import _npc_key  # local import avoids circular
+                key = _npc_key(npc.name)
+                state.npc_exchange_counts[key] = state.npc_exchange_counts.get(key, 0) + 1
 
         turns_in_activity = state.turn_count - state.activity_entered_turn
 
@@ -447,6 +459,26 @@ class PromptOrchestrator:
                 "role": "system",
                 "content": self._build_campaign_start_message(),
             })
+
+        # ── Hard spawn override ────────────────────────────────────────────
+        # When encounter mode has lasted past the arrival beat (phase_turn >= 1),
+        # the LLM must emit spawn_encounter. Inject an explicit directive
+        # immediately before the player message so it lands last and cannot be missed.
+        if narrative_mode == "encounter" and phase_turn >= 1 and not state.in_combat:
+            pending_enc = [t for t in state.encounter_registry.values() if not t.spawned]
+            if pending_enc:
+                enc = pending_enc[0]
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "COMBAT OVERRIDE — MANDATORY OUTPUT REQUIREMENT:\n"
+                        f"Your state_changes list MUST contain this entry:\n"
+                        f'  {{"op":"spawn_encounter","id":"{enc.id}"}}\n'
+                        "Write ONE sentence of combat-opening narrative. "
+                        "No entity speech. No further atmosphere. "
+                        "The arrival beat was last turn — combat starts NOW."
+                    ),
+                })
 
         messages.append({"role": "user", "content": f"PLAYER ACTION: {user_input}"})
         return messages

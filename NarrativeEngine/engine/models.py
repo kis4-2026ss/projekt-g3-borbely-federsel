@@ -187,9 +187,7 @@ class Quest:
 class NPC:
     name: str
     location: str
-    disposition: int = 50  # 0 (hostile) .. 100 (loyal)
     is_known: bool = False
-    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -259,7 +257,8 @@ class GameState:
     phase_entered_turn: int = 0          # transient — turn_count when current narrative_mode began
     current_activity: str = "exploring"  # transient — current activity category
     activity_entered_turn: int = 0       # transient — turn_count when current activity began
-    npc_exchanges_this_location: int = 0 # transient — dialogue exchanges at current location
+    npc_exchanges_this_location: int = 0 # transient — total dialogue exchanges at current location
+    npc_exchange_counts: Dict[str, int] = field(default_factory=dict) # transient — per-NPC exchange count
     player_approaching: bool = False     # transient — player signalled intent to engage a threat
     in_aftermath: bool = False           # transient — one-turn aftermath flag after combat ends
     enemies_defeated_since_rest: int = 0  # transient — 2+ = rest available (boss kill counts as 2)
@@ -305,6 +304,7 @@ class GameState:
         d.pop("current_activity", None)             # transient
         d.pop("activity_entered_turn", None)        # transient
         d.pop("npc_exchanges_this_location", None)  # transient
+        d.pop("npc_exchange_counts", None)           # transient
         d.pop("player_approaching", None)           # transient
         d.pop("in_aftermath", None)                 # transient
         d.pop("enemies_defeated_since_rest", None)  # transient
@@ -340,7 +340,11 @@ class GameState:
 
         history = [PlotPoint(**pp) for pp in d.pop("story_history", [])]
         quests = {k: Quest(**v) for k, v in d.pop("quests", {}).items()}
-        npcs = {k: NPC(**v) for k, v in d.pop("npcs", {}).items()}
+        # Strip legacy fields removed from NPC (disposition, metadata) so old saves load cleanly.
+        npcs = {
+            k: NPC(**{fk: fv for fk, fv in v.items() if fk not in ("disposition", "metadata")})
+            for k, v in d.pop("npcs", {}).items()
+        }
         locations = {k: Location(**v) for k, v in d.pop("locations", {}).items()}
         active_enemies = [Enemy(**e) for e in d.pop("active_enemies", [])]
 
@@ -379,6 +383,7 @@ class GameState:
         d.pop("current_activity", None)             # transient — guard for forward compat
         d.pop("activity_entered_turn", None)        # transient — guard for forward compat
         d.pop("npc_exchanges_this_location", None)  # transient — guard for forward compat
+        d.pop("npc_exchange_counts", None)           # transient — guard for forward compat
         d.pop("player_approaching", None)           # transient — guard for forward compat
         d.pop("in_aftermath", None)                 # transient — guard for forward compat
         d.pop("enemies_defeated_since_rest", None)  # transient — guard for forward compat

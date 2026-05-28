@@ -160,8 +160,8 @@ class CombatManager:
             label=f"{enemy.name} damage", roll_type="damage",
             crit=attack_roll.is_critical,
         )
-        actual_damage = max(1, int(damage_roll.total * damage_multiplier) - flat_reduction)
-        actual_damage = max(0, actual_damage)
+        raw = int(damage_roll.total * damage_multiplier) - flat_reduction
+        actual_damage = max(1, raw)
 
         # Mage's Mana Shield: absorb remaining damage before it reaches HP
         if self.state.mana_shield_value > 0:

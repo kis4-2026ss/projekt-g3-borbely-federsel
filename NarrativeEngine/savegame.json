@@ -1,48 +1,47 @@
 {
   "player": {
     "name": "Aurelian Exile",
-    "hp": 20,
-    "max_hp": 20,
+    "hp": 24,
+    "max_hp": 24,
     "level": 1,
     "inventory": [
       "Rusted Shortsword",
       "Patched Leather",
       "Health Potion",
       "Traveler's Cloak",
-      "Arcane Staff",
-      "Arcane Weave",
-      "Healing Draught"
+      "Ironclad Sword",
+      "Chainmail"
     ],
     "lineage": "Aurelian Bloodline",
     "bloodline_resonance": 0,
     "stats": {
-      "strength": 8,
-      "dexterity": 12,
-      "intelligence": 15,
-      "constitution": 10,
-      "wisdom": 12,
+      "strength": 15,
+      "dexterity": 10,
+      "intelligence": 8,
+      "constitution": 14,
+      "wisdom": 10,
       "charisma": 9
     },
     "equipped_weapon": {
-      "name": "Arcane Staff",
+      "name": "Ironclad Sword",
       "damage_dice": "1d8",
       "hit_bonus": 2,
-      "damage_type": "bludgeoning",
-      "description": "Starting gear for Mage."
+      "damage_type": "slashing",
+      "description": "Starting gear for Fighter."
     },
     "equipped_armor": {
-      "name": "Arcane Weave",
-      "ac_bonus": 2,
-      "description": "Starting gear for Mage."
+      "name": "Chainmail",
+      "ac_bonus": 4,
+      "description": "Starting gear for Fighter."
     },
     "gold": 0,
     "experience": 0,
     "status_effects": [],
-    "archetype": "mage",
-    "combat_resource": 5,
-    "max_combat_resource": 5
+    "archetype": "fighter",
+    "combat_resource": 3,
+    "max_combat_resource": 3
   },
-  "schema_version": 7,
+  "schema_version": 6,
   "current_location": "The Overgrown Outpost",
   "locations": {
     "The Overgrown Outpost": {
@@ -72,7 +71,7 @@
         "elowen",
         "spire"
       ],
-      "timestamp": "2026-05-28T17:08:31.465599"
+      "timestamp": "2026-05-28T17:39:19.189169"
     }
   ],
   "session_summary": "",
@@ -120,17 +119,14 @@
       "id": "health_potion",
       "name": "Health Potion",
       "item_type": "consumable",
-      "description": "A vial of glowing blue liquid. Tastes of copper and rain.",
+      "description": "Starting gear for Fighter.",
       "value_gold": 0,
       "damage_dice": null,
       "hit_bonus": 0,
       "damage_type": "slashing",
       "ac_bonus": 0,
-      "heal_amount": 8,
-      "tags": [
-        "consumable",
-        "starter"
-      ]
+      "heal_amount": 15,
+      "tags": []
     },
     "travelers_cloak": {
       "id": "travelers_cloak",
@@ -148,45 +144,31 @@
         "starter"
       ]
     },
-    "arcane_staff": {
-      "id": "arcane_staff",
-      "name": "Arcane Staff",
+    "ironclad_sword": {
+      "id": "ironclad_sword",
+      "name": "Ironclad Sword",
       "item_type": "weapon",
-      "description": "Starting gear for Mage.",
+      "description": "Starting gear for Fighter.",
       "value_gold": 0,
       "damage_dice": "1d8",
       "hit_bonus": 2,
-      "damage_type": "bludgeoning",
+      "damage_type": "slashing",
       "ac_bonus": 0,
       "heal_amount": 0,
       "tags": []
     },
-    "arcane_weave": {
-      "id": "arcane_weave",
-      "name": "Arcane Weave",
+    "chainmail": {
+      "id": "chainmail",
+      "name": "Chainmail",
       "item_type": "armor",
-      "description": "Starting gear for Mage.",
+      "description": "Starting gear for Fighter.",
       "value_gold": 0,
       "damage_dice": null,
       "hit_bonus": 0,
       "damage_type": "slashing",
-      "ac_bonus": 2,
+      "ac_bonus": 4,
       "heal_amount": 0,
-      "tags": []
-    },
-    "healing_draught": {
-      "id": "healing_draught",
-      "name": "Healing Draught",
-      "item_type": "consumable",
-      "description": "Starting gear for Mage.",
-      "value_gold": 0,
-      "damage_dice": null,
-      "hit_bonus": 0,
-      "damage_type": "slashing",
-      "ac_bonus": 0,
-      "heal_amount": 14,
       "tags": []
     }
-  },
-  "merchants": {}
+  }
 }
