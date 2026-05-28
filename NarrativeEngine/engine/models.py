@@ -4,7 +4,7 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 
 class IncompatibleSaveError(Exception):
@@ -193,6 +193,26 @@ class NPC:
 
 
 @dataclass
+class MerchantItem:
+    """A single item for sale in a merchant's shop."""
+    item_name: str
+    price: int
+    quantity: int = -1      # -1 = unlimited stock
+    item_id: str = ""       # links to item_registry if defined via define_item
+    description: str = ""
+
+
+@dataclass
+class Merchant:
+    """A merchant NPC with a shop inventory at a specific location."""
+    name: str
+    location: str
+    greeting: str = "Welcome, traveller. Browse my wares."
+    stock: List[MerchantItem] = field(default_factory=list)
+    npc_key: str = ""       # mirrors the NPC key (lowercased+underscored name)
+
+
+@dataclass
 class WorldState:
     time_of_day: str = "Morning"
     weather: str = "Gloomy"
@@ -227,7 +247,9 @@ class GameState:
     combat_log: List[str] = field(default_factory=list)
     encounter_registry: Dict[str, "EncounterTemplate"] = field(default_factory=dict)
     item_registry: Dict[str, "ItemDefinition"] = field(default_factory=dict)
+    merchants: Dict[str, "Merchant"] = field(default_factory=dict)
     last_rolls: List[DiceRoll] = field(default_factory=list)  # transient — not saved to disk
+    pending_shop: str = ""          # transient — merchant key to auto-open after a turn
     enemy_attack_adv: int = 0    # transient — -1 dis / 0 normal / +1 adv for enemy; cleared after use
     mana_shield_value: int = 0   # transient — set by Mage's Mana Shield, consumed in resolve_enemy_attack
     location_entered_turn: int = 0       # transient — turn on which the player last moved to a new location
@@ -272,6 +294,7 @@ class GameState:
     def to_json(self) -> str:
         d = asdict(self)
         d.pop("last_rolls", None)                   # transient, never persisted
+        d.pop("pending_shop", None)                 # transient, never persisted
         d.pop("enemy_attack_adv", None)             # transient
         d.pop("mana_shield_value", None)            # transient
         d.pop("location_entered_turn", None)        # transient
@@ -337,7 +360,15 @@ class GameState:
             for iid, idata in d.pop("item_registry", {}).items()
         }
 
+        # Reconstruct Merchant (contains nested MerchantItem list)
+        merchants: Dict[str, "Merchant"] = {}
+        for mkey, mdata in d.pop("merchants", {}).items():
+            stock_data = mdata.pop("stock", [])
+            stock = [MerchantItem(**item) for item in (stock_data or [])]
+            merchants[mkey] = Merchant(stock=stock, **mdata)
+
         d.pop("last_rolls", None)                   # not in save files, but guard anyway
+        d.pop("pending_shop", None)                 # transient — guard for forward compat
         d.pop("enemy_attack_adv", None)             # transient — guard for forward compat
         d.pop("mana_shield_value", None)            # transient — guard for forward compat
         d.pop("location_entered_turn", None)        # transient — guard for forward compat
@@ -364,6 +395,7 @@ class GameState:
             active_enemies=active_enemies,
             encounter_registry=encounter_registry,
             item_registry=item_registry,
+            merchants=merchants,
             **d,
         )
 

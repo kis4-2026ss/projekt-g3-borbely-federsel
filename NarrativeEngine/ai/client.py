@@ -54,7 +54,7 @@ class AIClient:
             "messages": payload,
             "model": self.model,
             "temperature": 0.8,
-            "max_tokens": 900,
+            "max_tokens": 1800,
             "top_p": 1,
         }
         if json_mode:
@@ -98,16 +98,16 @@ class AIClient:
         return result.strip()
 
     async def _post(self, data: Dict[str, Any]) -> str:
+        # headers = {
+        #     "Content-Type": "application/json",
+        #     "Authorization": f"Bearer {self.api_key}",
+        #     "HTTP-Referer": "https://github.com/projekt-g3-borbely-federsel",  # any URL
+        #     "X-Title": "ChronosTUI",
+        # }
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
-            "HTTP-Referer": "https://github.com/projekt-g3-borbely-federsel",  # any URL
-            "X-Title": "ChronosTUI",
         }
-        #headers = {
-        #    "Content-Type": "application/json",
-        #    "Authorization": f"Bearer {self.api_key}",
-        #}
         # Two attempts: first uses the persistent connection (fast path).
         # On any connection/timeout error, recreate the client and retry once
         # on a fresh socket — covers both stale-connection and transient failures.
