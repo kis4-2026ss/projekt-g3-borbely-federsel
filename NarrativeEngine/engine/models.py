@@ -320,7 +320,7 @@ class GameState:
 
         history = [PlotPoint(**pp) for pp in d.pop("story_history", [])]
         quests = {k: Quest(**v) for k, v in d.pop("quests", {}).items()}
-        # Strip legacy fields removed from NPC (disposition, metadata) so old saves load cleanly.
+        # Strip legacy fields removed from NPC so old saves load cleanly.
         npcs = {
             k: NPC(**{fk: fv for fk, fv in v.items() if fk not in ("disposition", "metadata")})
             for k, v in d.pop("npcs", {}).items()

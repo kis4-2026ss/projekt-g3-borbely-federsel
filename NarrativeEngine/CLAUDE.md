@@ -71,7 +71,7 @@ The system prompt requires the LLM to return a single JSON object:
 | `discover_location` | Add or enrich a `Location` (description, connections). |
 | `set_time_of_day` / `set_weather` / `set_world_flag` | World state. |
 | `advance_quest` / `complete_quest` / `fail_quest` | Quest progression. |
-| `add_npc` / `update_npc_disposition` | NPC roster (key = lowercased+underscored name). |
+| `add_npc` | NPC roster (key = lowercased+underscored name). |
 
 The full op reference is exported as `OP_REFERENCE` (in `engine/state_changes.py`) and injected into the system prompt by the orchestrator. **When adding a new op, register it in both `_HANDLERS` and `OP_REFERENCE`** so the model knows it exists.
 

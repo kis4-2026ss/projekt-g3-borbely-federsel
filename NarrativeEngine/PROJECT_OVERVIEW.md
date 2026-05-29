@@ -180,7 +180,7 @@ The system prompt requires the LLM to return a single JSON object every turn:
 | Combat | `start_combat`, `roll_attack`, `end_combat`, `roll_skill_check` |
 | World / Location | `move_to`, `discover_location`, `set_time_of_day`, `set_weather`, `set_world_flag` |
 | Quests | `define_quest`, `advance_quest`, `complete_quest`, `fail_quest` |
-| NPCs | `add_npc`, `update_npc_disposition` |
+| NPCs | `add_npc` |
 | Activity | `set_player_approaching` |
 
 ---
