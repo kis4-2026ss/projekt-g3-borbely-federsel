@@ -98,6 +98,8 @@ class EncounterTemplate:
     tags: List[str] = field(default_factory=list)
     is_boss: bool = False
     spawned: bool = False             # True once spawn_encounter has fired
+    looted: bool = False              # True once loot_encounter has distributed its rewards
+    defined_at: str = ""              # auto-set to current_location when define_encounter fires
 
 
 @dataclass

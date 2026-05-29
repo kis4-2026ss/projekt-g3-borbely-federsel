@@ -8,7 +8,10 @@
       "Bash(Select-Object FullName)",
       "Bash(ls \"C:\\\\Users\\\\phili\\\\.claude\\\\plans\" 2>/dev/null || echo \"Directory does not exist\")",
       "PowerShell(python --version)",
-      "PowerShell(py --version)"
+      "PowerShell(py --version)",
+      "Bash(python -c \"import json; json.load\\(open\\(r'C:\\\\dev\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\\\\prompts\\\\system_prompt.json'\\)\\); print\\('system_prompt.json OK'\\)\")",
+      "Bash(python -c \"import json; json.load\\(open\\(r'C:\\\\dev\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\\\\prompts\\\\system_prompt.json', encoding='utf-8'\\)\\); print\\('system_prompt.json OK'\\)\")",
+      "Bash(python -c \"import json; json.load\\(open\\(r'C:\\\\dev\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\\\\prompts\\\\encounter_rules.json', encoding='utf-8'\\)\\); print\\('encounter_rules.json OK'\\)\")"
     ]
   }
 }
