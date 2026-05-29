@@ -250,32 +250,11 @@ class PromptOrchestrator:
             "pending_quest_encounter_ids": pending_quest_encounters,
         }
 
-        # Merchants present at current location — shows the LLM what shop stock exists
-        local_merchants = {
-            k: {
-                "name": m.name,
-                "greeting": m.greeting,
-                "stock": [
-                    {
-                        "item_name": s.item_name,
-                        "price": s.price,
-                        "quantity": "unlimited" if s.quantity < 0 else s.quantity,
-                        "description": s.description,
-                    }
-                    for s in m.stock
-                    if s.quantity != 0   # exclude sold-out items
-                ],
-            }
-            for k, m in state.merchants.items()
-            if m.location == state.current_location
-        }
-
         return {
             "player": player_info,
             "location": location_info,
             "active_quests": active_quests,
             "npcs_present": local_npcs,
-            "merchants_present": local_merchants if local_merchants else None,
             "world": asdict(state.world),
             "turn_count": state.turn_count,
             "combat": combat_info,

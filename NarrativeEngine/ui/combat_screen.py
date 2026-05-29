@@ -177,6 +177,7 @@ class CombatScreen(ModalScreen[None]):
         self._round_in_progress: bool = False # prevents double-fire during async delays
         self._reaction_pending: bool = False  # True while waiting for V/N reaction input
         self._reaction_choice: str = ""       # "react" | "skip" | "" (pending)
+        self._reactions_used: int = 0         # max 1 reaction per combat encounter
         self._load_actions()
 
     # ── Action registry ───────────────────────────────────────────────────
@@ -215,11 +216,12 @@ class CombatScreen(ModalScreen[None]):
 
     def on_mount(self) -> None:
         """Populate the combat log with existing entries and do an initial panel render."""
-        # Reset class resource to full at the start of each new combat encounter
+        # Reset class resource and reaction counter at the start of each new combat encounter
         if self.round == 0:
             p = self.engine.state.player
             if p.max_combat_resource > 0:
                 p.combat_resource = p.max_combat_resource
+            self._reactions_used = 0
         log = self.query_one("#combat-log", RichLog)
         state = self.engine.state
         for line in state.combat_log[-8:]:
@@ -579,6 +581,7 @@ class CombatScreen(ModalScreen[None]):
         reaction_def = _get_reaction_def(state.player.archetype)
         can_react = (
             reaction_def is not None
+            and self._reactions_used == 0
             and self._can_afford_reaction(reaction_def["cost"])
         )
         if can_react:
@@ -589,6 +592,7 @@ class CombatScreen(ModalScreen[None]):
         # Phase 3: apply damage (possibly modified by reaction)
         if choice == "react" and reaction_def:
             self._spend_resource(reaction_def["cost"])
+            self._reactions_used += 1  # one reaction per combat encounter
             reaction_id = reaction_def["id"]
             if reaction_id == "guard":
                 reduction = max(1, state.player.stat_mod("strength") + 2)

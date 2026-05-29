@@ -19,12 +19,13 @@ class JournalModal(ModalScreen[None]):
 
     CSS = """
     JournalModal {
-        align: center middle;
+        width: 100%;
+        height: 100%;
     }
 
     #journal-panel {
-        width: 90;
-        height: 36;
+        width: 100%;
+        height: 100%;
         background: #1a1a1a;
         border: thick $accent;
         padding: 0;
@@ -69,6 +70,7 @@ class JournalModal(ModalScreen[None]):
     .plot-entry {
         margin-bottom: 1;
         color: #cccccc;
+        width: 100%;
     }
 
     .plot-event {
@@ -82,6 +84,7 @@ class JournalModal(ModalScreen[None]):
     .location-entry {
         margin-bottom: 1;
         color: #cccccc;
+        width: 100%;
     }
 
     .location-name {
@@ -182,11 +185,7 @@ class JournalModal(ModalScreen[None]):
             lines = [f"[bold $accent]📍 {loc_name}[/]{here}"]
 
             if loc.description and not loc.description.startswith("(Newly"):
-                # Truncate long descriptions to keep the list scannable
-                desc = loc.description
-                if len(desc) > 90:
-                    desc = desc[:87] + "…"
-                lines.append(f"   [dim]{desc}[/]")
+                lines.append(f"   [dim]{loc.description}[/]")
 
             if loc.connections:
                 conns = ", ".join(loc.connections[:4])

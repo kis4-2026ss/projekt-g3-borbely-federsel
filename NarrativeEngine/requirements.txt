@@ -3,3 +3,5 @@ rich
 httpx
 pydantic
 python-dotenv
+elevenlabs
+pygame-ce

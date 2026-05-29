@@ -1,3 +1,4 @@
+import os
 from typing import Dict, List
 
 from textual.app import App, ComposeResult
@@ -9,6 +10,7 @@ from textual.widgets import Header, Input, Label, RichLog, Static
 from ai.client import AIClient
 from ai.orchestrator import PromptOrchestrator
 from ai.parser import parse_response
+from ai.tts import speak as tts_speak, stop as tts_stop
 from engine.core import GameEngine
 from engine.models import DiceRoll, Enemy, IncompatibleSaveError, Player
 from engine.state_changes import apply_changes
@@ -40,8 +42,6 @@ _CHANGE_TIERS: Dict[str, tuple] = {
     "move_to":           ("🗺", "bold cyan",    "Travel"),
     "discover_location": ("🗺", "cyan",         "Discovered"),
     "add_npc":           ("👤", "bold",         "Met"),
-    "add_merchant":      ("🏪", "bold yellow",  "Merchant"),
-    "open_shop":         ("🏪", "bold yellow",  "Shop"),
     "advance_quest":     ("★",  "bold magenta", "Quest"),
     "complete_quest":    ("★",  "bold green",   "Quest complete"),
     "fail_quest":        ("★",  "bold red",     "Quest failed"),
@@ -132,7 +132,7 @@ class ChronosApp(App):
         ("ctrl+b", "open_combat", "Combat"),
         ("ctrl+r", "rest", "Rest"),
         ("ctrl+j", "open_journal", "Journal"),
-        ("ctrl+m", "open_merchant", "Shop"),
+        ("ctrl+t", "toggle_tts", "TTS"),
     ]
 
     def __init__(self, **kwargs):
@@ -140,6 +140,8 @@ class ChronosApp(App):
         self.engine = GameEngine()
         self.orchestrator = PromptOrchestrator()
         self.ai_client = AIClient()
+        self.tts_enabled: bool = os.getenv("TTS_ENABLED", "false").lower() == "true"
+        self.tts_voice: str = os.getenv("TTS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -161,8 +163,8 @@ class ChronosApp(App):
                         id="player-input",
                     )
                 yield Static(
-                    "^A Attack  ^B Combat  ^E Inventory  ^J Journal  ^M Shop"
-                    "  ^U Use  ^R Rest  ^S Save  ^L Load  ^Q Quit",
+                    "^A Attack  ^B Combat  ^E Inventory  ^J Journal"
+                    "  ^U Use  ^R Rest  ^S Save  ^L Load  ^T TTS  ^Q Quit",
                     id="key-hints-bar",
                 )
     def on_mount(self) -> None:
@@ -228,8 +230,8 @@ class ChronosApp(App):
     # ── Thinking indicator ────────────────────────────────────────────────
 
     _HINTS_NORMAL = (
-        "^A Attack  ^B Combat  ^E Inventory  ^J Journal  ^M Shop"
-        "  ^U Use  ^R Rest  ^S Save  ^L Load  ^Q Quit"
+        "^A Attack  ^B Combat  ^E Inventory  ^J Journal"
+        "  ^U Use  ^R Rest  ^S Save  ^L Load  ^T TTS  ^Q Quit"
     )
 
     async def _with_thinking_indicator(self, coro) -> None:
@@ -362,6 +364,18 @@ class ChronosApp(App):
         log_widget.write("")
         log_widget.write(narrative)
 
+        if self.tts_enabled:
+            async def _tts_turn(text: str, voice: str) -> None:
+                try:
+                    await tts_speak(text, voice)
+                except Exception:
+                    self.tts_enabled = False
+                    self.query_one("#game-log", RichLog).write(
+                        "[yellow]⚠ TTS unavailable — narrator voice disabled."
+                        " Check ELEVEN_API_KEY in .env[/]"
+                    )
+            self.run_worker(_tts_turn(narrative, self.tts_voice), name="tts")
+
         _render_state_changes(log_widget, change_records)
 
         if llm_plot_event:
@@ -393,14 +407,6 @@ class ChronosApp(App):
                 )
                 # No auto-open — player presses ^B when ready, same as boss flow,
                 # so they can read the encounter narrative before the modal opens.
-
-        # Auto-open merchant shop when the LLM emitted open_shop
-        if state.pending_shop:
-            shop_key = state.pending_shop
-            state.pending_shop = ""
-            if shop_key in state.merchants:
-                from ui.merchant_modal import MerchantModal
-                self.push_screen(MerchantModal(self.engine, shop_key, self.update_ui))
 
         if self._should_refresh_summary():
             self.run_worker(
@@ -618,21 +624,22 @@ class ChronosApp(App):
         from ui.journal_modal import JournalModal
         self.push_screen(JournalModal(self.engine))
 
-    def action_open_merchant(self) -> None:
-        """Open the merchant shop if one is present at the current location (Ctrl+M)."""
-        state = self.engine.state
+    def action_toggle_tts(self) -> None:
+        """Toggle narrator TTS on/off (Ctrl+T)."""
         log = self.query_one("#game-log", RichLog)
-        # Find a merchant at the player's current location
-        merchant_key = next(
-            (k for k, m in state.merchants.items()
-             if m.location == state.current_location),
-            None,
-        )
-        if merchant_key is None:
-            log.write("[dim yellow]There is no merchant here.[/]")
-            return
-        from ui.merchant_modal import MerchantModal
-        self.push_screen(MerchantModal(self.engine, merchant_key, self.update_ui))
+        if self.tts_enabled:
+            self.tts_enabled = False
+            tts_stop()
+            log.write("[dim cyan]🔇 TTS off[/]")
+        else:
+            if os.getenv("ELEVEN_API_KEY", ""):
+                self.tts_enabled = True
+                log.write("[dim cyan]🔊 TTS on[/]")
+            else:
+                log.write(
+                    "[yellow]⚠ TTS unavailable — narrator voice disabled."
+                    " Check ELEVEN_API_KEY in .env[/]"
+                )
 
     def _open_combat_screen(self) -> None:
         """Push the CombatScreen modal and lock the narrative input while it's open."""
