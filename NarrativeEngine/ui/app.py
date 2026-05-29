@@ -13,6 +13,7 @@ from ai.parser import parse_response
 from ai.tts import speak as tts_speak, stop as tts_stop
 from engine.core import GameEngine
 from engine.models import DiceRoll, Enemy, IncompatibleSaveError, Player
+from engine.session_logger import SessionLogger
 from engine.state_changes import apply_changes
 
 
@@ -140,6 +141,7 @@ class ChronosApp(App):
         self.engine = GameEngine()
         self.orchestrator = PromptOrchestrator()
         self.ai_client = AIClient()
+        self.session_logger = SessionLogger()
         self.tts_enabled: bool = os.getenv("TTS_ENABLED", "false").lower() == "true"
         self.tts_voice: str = os.getenv("TTS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
 
@@ -171,7 +173,9 @@ class ChronosApp(App):
         self.run_worker(self._init_game(), exclusive=True, name="init")
 
     async def on_unmount(self) -> None:
-        """Close the persistent HTTP connection pool cleanly on exit."""
+        """Close the persistent HTTP connection pool and session log cleanly on exit."""
+        self.session_logger.log_system("Session ended")
+        self.session_logger.close()
         try:
             await self.ai_client.aclose()
         except Exception:
@@ -191,6 +195,11 @@ class ChronosApp(App):
                 self.update_ui()
                 self.query_one("#player-input").focus()
                 log.write("[bold green]SYSTEM: Chronicle restored from disk.[/]")
+                self.session_logger.log_system(
+                    f"Game loaded — {self.engine.state.player.archetype or 'unknown'}"
+                    f" — turn {self.engine.state.turn_count}"
+                    f" — loc: {self.engine.state.current_location}"
+                )
                 return
             except IncompatibleSaveError as e:
                 log.write(f"[bold red]SYSTEM: {e} — starting new chronicle.[/]")
@@ -199,6 +208,9 @@ class ChronosApp(App):
         self.engine.initialize_campaign()
         await self._show_class_select()
         self.update_ui()
+        self.session_logger.log_system(
+            f"New game — {self.engine.state.player.archetype or 'unknown'} — turn 0"
+        )
         # Disable input while the opening narration is being generated,
         # then re-enable and focus once the LLM responds.
         try:
@@ -408,6 +420,17 @@ class ChronosApp(App):
                 # No auto-open — player presses ^B when ready, same as boss flow,
                 # so they can read the encounter narrative before the modal opens.
 
+        # ── Session log ───────────────────────────────────────────────────────
+        self.session_logger.log_turn(
+            turn_count=state.turn_count,
+            player_input=user_input,
+            narrative=parsed.narrative or "",
+            state_changes=parsed.state_changes,
+            location=state.current_location,
+            hp=state.player.hp,
+            parse_warnings=parsed.parse_warnings or None,
+        )
+
         if self._should_refresh_summary():
             self.run_worker(
                 self._refresh_summary(),
@@ -539,6 +562,10 @@ class ChronosApp(App):
         try:
             self.engine.save_game()
             log.write("[bold green]SYSTEM: Chronicle saved to disk.[/]")
+            self.session_logger.log_system(
+                f"Game saved — turn {self.engine.state.turn_count}"
+                f" — loc: {self.engine.state.current_location}"
+            )
         except Exception as e:
             log.write(f"[bold red]SYSTEM: Save failed: {e}[/]")
 
@@ -557,6 +584,11 @@ class ChronosApp(App):
             self._replay_log_to_widget(log)
             self.update_ui()
             log.write("[bold green]SYSTEM: Chronicle restored from disk.[/]")
+            self.session_logger.log_system(
+                f"Game loaded (mid-session) — {self.engine.state.player.archetype or 'unknown'}"
+                f" — turn {self.engine.state.turn_count}"
+                f" — loc: {self.engine.state.current_location}"
+            )
         except IncompatibleSaveError as e:
             log.write(f"[bold red]SYSTEM: {e}[/]")
         except FileNotFoundError:
@@ -618,6 +650,9 @@ class ChronosApp(App):
         )
         log.write("[dim]Defeat 2 enemies (or 1 boss) to rest again.[/]")
         self.update_ui()
+        self.session_logger.log_system(
+            f"Player rested: +{healed} HP → {p.hp}/{p.max_hp}{resource_msg}"
+        )
 
     def action_open_journal(self) -> None:
         """Open the journal overlay (Ctrl+J)."""

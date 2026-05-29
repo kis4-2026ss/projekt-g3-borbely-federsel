@@ -52,8 +52,8 @@
       "weapon_examples": ["Aurelian War Sword", "Ironbound Battle Axe", "Cleaver of the Last Gate"],
       "armor_type": "heavy armor or chainmail",
       "armor_examples": ["Aurelian Plate Shard", "Ironbound Pauldrons", "Warden's Cuirass"],
-      "damage_dice_by_level": {"1": "1d8",  "2": "1d10", "3": "2d6", "4": "2d8", "5": "3d6"},
-      "hit_bonus_by_level":   {"1": 1,      "2": 2,      "3": 2,     "4": 3,     "5": 3},
+      "damage_dice_by_level": {"1": "1d10", "2": "1d10", "3": "2d6", "4": "2d8", "5": "3d6"},
+      "hit_bonus_by_level":   {"1": 2,      "2": 3,      "3": 3,     "4": 4,     "5": 4},
       "ac_bonus_by_level":    {"1": 3,      "2": 4,      "3": 5,     "4": 5,     "5": 6}
     }
   },
@@ -109,8 +109,8 @@
       "weapon_examples": ["Aurelian Resonance Staff", "Sundered Focus Crystal", "Echo Rod of the Ancients"],
       "armor_type": "light robe or arcane weave",
       "armor_examples": ["Aurelian Weave Mantle", "Scholar's Warding Robe", "Resonance Shard Vest"],
-      "damage_dice_by_level": {"1": "1d8",  "2": "1d10", "3": "2d6", "4": "2d8", "5": "3d6"},
-      "hit_bonus_by_level":   {"1": 1,      "2": 2,      "3": 2,     "4": 3,     "5": 3},
+      "damage_dice_by_level": {"1": "1d10", "2": "1d10", "3": "2d6", "4": "2d8", "5": "3d6"},
+      "hit_bonus_by_level":   {"1": 2,      "2": 3,      "3": 3,     "4": 4,     "5": 4},
       "ac_bonus_by_level":    {"1": 2,      "2": 3,      "3": 3,     "4": 4,     "5": 4}
     }
   },
@@ -166,9 +166,9 @@
       "weapon_examples": ["Aurelian Resonance Staff", "Iron-Veined War Bracers", "Silent Step Quarterstaff"],
       "armor_type": "light armor or bracers",
       "armor_examples": ["Aurelian Shard Bracers", "Warden's Wrap", "Balanced Guard Vest"],
-      "damage_dice_by_level": {"1": "1d6",  "2": "1d8", "3": "2d4", "4": "2d6", "5": "2d8"},
-      "hit_bonus_by_level":   {"1": 1,      "2": 1,     "3": 2,     "4": 2,     "5": 3},
-      "ac_bonus_by_level":    {"1": 2,      "2": 3,     "3": 3,     "4": 4,     "5": 4}
+      "damage_dice_by_level": {"1": "1d8",  "2": "1d10", "3": "2d4", "4": "2d6", "5": "2d8"},
+      "hit_bonus_by_level":   {"1": 2,      "2": 2,      "3": 3,     "4": 3,     "5": 4},
+      "ac_bonus_by_level":    {"1": 2,      "2": 3,      "3": 3,     "4": 4,     "5": 4}
     }
   },
 
@@ -226,9 +226,9 @@
       "weapon_examples": ["Aurelian Shadow Blades", "Venom-Etched Dirk", "Ghost-Edge Short Sword"],
       "armor_type": "light leather or shadow-treated",
       "armor_examples": ["Aurelian Void Leathers", "Phantom Wrap Vest", "Dusk Runner's Hide"],
-      "damage_dice_by_level": {"1": "1d6",  "2": "1d8", "3": "2d4", "4": "2d6", "5": "2d8"},
-      "hit_bonus_by_level":   {"1": 2,      "2": 2,     "3": 3,     "4": 3,     "5": 4},
-      "ac_bonus_by_level":    {"1": 2,      "2": 3,     "3": 3,     "4": 4,     "5": 4}
+      "damage_dice_by_level": {"1": "1d8",  "2": "1d10", "3": "2d4", "4": "2d6", "5": "2d8"},
+      "hit_bonus_by_level":   {"1": 2,      "2": 3,      "3": 3,     "4": 4,     "5": 4},
+      "ac_bonus_by_level":    {"1": 2,      "2": 3,      "3": 3,     "4": 4,     "5": 4}
     }
   }
 }

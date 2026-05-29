@@ -9,9 +9,9 @@
       "Bash(ls \"C:\\\\Users\\\\phili\\\\.claude\\\\plans\" 2>/dev/null || echo \"Directory does not exist\")",
       "PowerShell(python --version)",
       "PowerShell(py --version)",
-      "Bash(cd '/c/Users/lodif/Documents/LobiSync/School_Work/FH/Semester 4/KIS4/projekt-g3-borbely-federsel' && grep -A 30 \"_add_npc\\\\|_update_npc_disposition\" NarrativeEngine/engine/state_changes.py | head -80)",
-      "Bash(cd '/c/Users/lodif/Documents/LobiSync/School_Work/FH/Semester 4/KIS4/projekt-g3-borbely-federsel' && grep -r \"npcs\\\\|relationship\\\\|disposition\" NarrativeEngine/ui/ --include=\"*.py\" | grep -v \".venv\")",
-      "Bash(grep -E \"\\\\.\\(env|json|py\\)$|^d\")"
+      "Bash(python -c \"import json; json.load\\(open\\(r'C:\\\\dev\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\\\\prompts\\\\system_prompt.json'\\)\\); print\\('system_prompt.json OK'\\)\")",
+      "Bash(python -c \"import json; json.load\\(open\\(r'C:\\\\dev\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\\\\prompts\\\\system_prompt.json', encoding='utf-8'\\)\\); print\\('system_prompt.json OK'\\)\")",
+      "Bash(python -c \"import json; json.load\\(open\\(r'C:\\\\dev\\\\projekt-g3-borbely-federsel\\\\NarrativeEngine\\\\prompts\\\\encounter_rules.json', encoding='utf-8'\\)\\); print\\('encounter_rules.json OK'\\)\")"
     ]
   }
 }

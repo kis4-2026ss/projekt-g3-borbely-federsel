@@ -193,7 +193,9 @@ class PromptOrchestrator:
                 "name": t.name,
                 "is_boss": t.is_boss,
                 "spawned": t.spawned,
+                "looted": t.looted,   # True = fully resolved, entity is permanently gone from the world
                 "defeat_condition": t.defeat_condition,
+                "narrative_flavor": t.narrative_flavor,
                 "tags": t.tags,
                 "quest_id": t.quest_id,
             }

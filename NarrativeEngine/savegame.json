@@ -1,21 +1,23 @@
 {
   "player": {
     "name": "Aurelian Exile",
-    "hp": 24,
-    "max_hp": 24,
-    "level": 1,
+    "hp": 25,
+    "max_hp": 30,
+    "level": 2,
     "inventory": [
       "Rusted Shortsword",
       "Patched Leather",
       "Health Potion",
       "Traveler's Cloak",
       "Ironclad Sword",
-      "Chainmail"
+      "Chainmail",
+      "Solar Crest",
+      "Aurelian War Sword"
     ],
     "lineage": "Aurelian Bloodline",
     "bloodline_resonance": 0,
     "stats": {
-      "strength": 15,
+      "strength": 16,
       "dexterity": 10,
       "intelligence": 8,
       "constitution": 14,
@@ -23,18 +25,18 @@
       "charisma": 9
     },
     "equipped_weapon": {
-      "name": "Ironclad Sword",
-      "damage_dice": "1d8",
+      "name": "Aurelian War Sword",
+      "damage_dice": "1d10",
       "hit_bonus": 2,
       "damage_type": "slashing",
-      "description": "Starting gear for Fighter."
+      "description": "A finely balanced sword forged in the image of ancient Aurelian blades, humming faintly with forgotten power."
     },
     "equipped_armor": {
       "name": "Chainmail",
       "ac_bonus": 4,
       "description": "Starting gear for Fighter."
     },
-    "gold": 0,
+    "gold": 45,
     "experience": 0,
     "status_effects": [],
     "archetype": "fighter",
@@ -42,7 +44,7 @@
     "max_combat_resource": 3
   },
   "schema_version": 6,
-  "current_location": "The Overgrown Outpost",
+  "current_location": "Shattered Plaza",
   "locations": {
     "The Overgrown Outpost": {
       "name": "The Overgrown Outpost",
@@ -51,16 +53,96 @@
         "The Shattered Plaza"
       ],
       "interactables": []
+    },
+    "The Shattered Plaza": {
+      "name": "The Shattered Plaza",
+      "description": "A wide expanse of broken stone and metal, where the Weeping Guardian stands silent and watchful, visible from the Outpost.",
+      "connections": [],
+      "interactables": []
+    },
+    "Shattered Plaza": {
+      "name": "Shattered Plaza",
+      "description": "(Newly travelled-to area.)",
+      "connections": [],
+      "interactables": []
     }
   },
-  "quests": {},
-  "npcs": {},
+  "quests": {
+    "weeping_guardian": {
+      "name": "The Weeping Guardian",
+      "description": "An ancient construct roams the Shattered Plaza, its wails echoing through the ruins. Locate it, find a way to soothe or dismantle it, and retrieve the Solar Crest it guards.",
+      "objectives": [
+        "Locate the Weeping Guardian in the Shattered Plaza",
+        "Find a way to soothe or dismantle the Guardian",
+        "Retrieve the Solar Crest"
+      ],
+      "completed_objectives": [],
+      "status": "completed",
+      "metadata": {
+        "guidelines": "Explore the ruins carefully; listen to the whispers of the past and the warnings of the present. The Guardian is more than a machine; it is something old, bound by forgotten laws."
+      }
+    },
+    "whispers_in_the_ruins": {
+      "name": "Whispers in the Ruins",
+      "description": "Strange sounds echo from the heart of the shattered plaza's depths. Seek out a frightened scavenger named Talia who speaks of voices and shadows not seen before, and uncover the source of this new threat.",
+      "objectives": [
+        "Find Talia, the scavenger, near the old archive",
+        "Investigate the source of the eerie sounds",
+        "Survive the encounter with the unknown menace"
+      ],
+      "completed_objectives": [],
+      "status": "active",
+      "metadata": {
+        "guidelines": "The ruins are alive with secrets. Trust the whispers of the frightened; their fear is a beacon. The threat is unlike the guardian\u2014more human, twisted by the ruins' corruption."
+      }
+    }
+  },
+  "npcs": {
+    "maren": {
+      "name": "Maren",
+      "location": "The Overgrown Outpost",
+      "is_known": true
+    },
+    "talia": {
+      "name": "Talia",
+      "location": "Shattered Plaza",
+      "is_known": true
+    }
+  },
   "world": {
-    "time_of_day": "Morning",
+    "time_of_day": "Dawn",
     "weather": "Ethereal Mist",
     "flags": {}
   },
-  "log": [],
+  "log": [
+    "NARRATOR: You wake beneath the collapsed roof of a merchant's stall\u2014its shattered stone edges pressed cold against your back. In your palm, the rusted locket feels oddly warm, faint against your skin in the chill of dawn. Outside, the Outpost breathes under a mist so thin it seems spun from the air itself\u2014ethereal and unnatural. The Needle, that fractured crystal spire, leaks threadlike ribbons of blue-white light, casting fractured shadows into the mud. Near the eastern well, the sour stench of rot thickens, clinging to the damp stone. At the edge, Maren, the elder widow, stands silent, lips moving, her silhouette etched with the long weight of fear.",
+    "PLAYER: what is",
+    "NARRATOR: Maren's eyes flicker with a shadow of memory or fear, her voice low and brittle. \"It is the crying\u2014a machine, they say, but more. It wanders at night, wails like a lost soul trapped in iron. My boy saw it near the plaza; it moved slow, but the noise\u2014like it mourned something old, something broken.\" She pulls her shawl tighter around her shoulders, her gaze drifting beyond you toward the shattered spire. \"The Guardian, they call it. Bound to the ruins... and to sorrow.\" Behind her, the wind carries a distant, metallic groan from the plaza, sharp and unyielding.",
+    "PLAYER: Alright, I will head to the spire",
+    "NARRATOR: You leave the Outpost behind, the soft crunch of gravel underfoot mingling with the distant, metallic groan still echoing from the Shattered Plaza. The cracked crystal spire looms ahead, its fractured surfaces catching the dawn's pale light. A thin wind stirs the dead leaves at your feet, carrying a faint scent of burnt oil and cold stone. The air thickens near the plaza, where shadows pool beneath broken arches. As you draw closer, a faint, sorrowful wail threads through the mist, chilling your bones. Something moves slowly among the rubble\u2014a figure both massive and fragile, its sorrow unmistakable.",
+    "PLAYER: Look at the figure",
+    "NARRATOR: The figure shifts with a grinding rasp that echoes through the plaza's fractured stones. Its shape is a twisted silhouette of cold metal and shattered glass, limbs creaking as if burdened by sorrow itself. A dim, blue light pulsates beneath its cracked plates, flickering like a wounded heart. Your breath fogs the misty air as the wail rises again, low and mournful, threading through the ruin\u2019s dust. Nearby, a crushed handprint in the dirt disrupts the fine layer of ash, hinting at recent violence. The Guardian's hollow gaze swings toward the shattered archway beyond, where a flickering shadow stirs.",
+    "PLAYER: Attack it",
+    "NARRATOR: You swing your Ironclad Sword toward the Weeping Guardian, the cold steel cutting through the fog. The construct\u2019s blue light flares sharply, a mournful cry escaping its broken frame. Its movements are slow but deliberate, a grinding rasp filling the plaza as it turns toward you, hollow eyes dimming with recognition\u2014not rage. The air chills further, the mist swirling in the wake of its heavy limbs. This is no mindless foe; something ancient and burdened responds to your strike. The sorrow in its mechanical wail deepens, echoing through the broken stone. The fight is upon you.",
+    "PLAYER: then let us fihgt",
+    "NARRATOR: The Weeping Guardian looms, its fractured plates rattling with a hollow echo as it braces for your strike. Its sorrowful cry pierces the mist, a sound almost human, before it swings a heavy, rusted arm toward you. Your Ironclad Sword meets the grinding metal with a clang, sparks flying. The cold bite of the plaza air sharpens as the battle begins.",
+    "COMBAT: Weeping Guardian has been defeated! Gained 50 XP.",
+    "COMBAT: The enemy has been defeated.",
+    "NARRATOR: The Weeping Guardian collapses with a final, sorrowful keening that reverberates through the mist-choked plaza. Its frame shudders then stills, dust settling like ash on cracked stone. Among the scattered fragments lies a faintly glowing emblem\u2014the Solar Crest, its surface etched with delicate, ancient runes. Your side aches from the guardian's last blows, but a sharper noise draws your gaze\u2014a faint clatter deeper within the ruins, where shadows stir beyond the reach of dawn's weak light.",
+    "PLAYER: Follow the shadows I amseeing",
+    "NARRATOR: You press deeper into the ruins, the chill of dawn mingling with the faint scent of burnt oil and aged stone. Shadows twist between fractured pillars, slipping past the edge of your vision. A faint, uneven shuffle echoes\u2014a presence moving just beyond the veil of mist. The clatter resolves into hurried steps, a ragged breath, and a voice fractured by fear: \"Who goes there?\" A figure emerges, clutching a stained sack, eyes wide and darting. \"You shouldn't be here,\" she whispers. \"The voices\u2014they come alive after the Guardian fell.\"",
+    "PLAYER: Dont worry, I will take care of them. What should I do?",
+    "NARRATOR: Talia flinches, the sack shifting against her side. Her eyes, wide with dread, flicker between you and the dark arches where the shadows coil. \"Find the truth,\" she breathes, voice low but urgent. \"They speak of a man... twisted by the ruins, not as we are. He moves like a shadow but strikes like a blade. The others didn\u2019t stand a chance.\" Her gaze hardens, despite the tremble in her hands. \"Go. Find him before the whispers draw more souls into the dark.\" The faint scrape of footsteps echoes again, closer now, stirring the mist.",
+    "PLAYER: Look for the man amid the ruins",
+    "NARRATOR: You step cautiously among the shattered spires, the cold mist crawling over your skin like a living thing. The faint scrape of footsteps has ceased, replaced by a distant, irregular tapping\u2014something metallic, perhaps a blade against stone. The ruins feel heavy with the weight of unseen eyes, and the air smells faintly of burnt oil and damp wood. Your boots crunch over brittle debris, and shadows lengthen in the dawn\u2019s weak light. A ragged cloth flutters briefly against a broken pillar\u2014a sign of recent passage. Somewhere close, a figure moves just beyond your sight, paused but alert.",
+    "PLAYER: Follow the shadowy man",
+    "NARRATOR: You press forward, the uneven tapping of metal on stone growing louder and sharper. The shadowy man slips between the fractured pillars with unnatural grace, his movements fluid but edged with menace. The cold mist clings to your skin, mingling with the acrid scent of burnt oil and rusted metal that fills the air. A faint flicker of blue light glints from beneath a tattered cloak as he pauses, turning his head just enough to reveal a twisted, scarred face\u2014half-hidden beneath a hood. \"You shouldn\u0002t have come,\" he hisses, voice low and cracked. His hand rises, revealing a jagged blade that catches the weak dawn light, ready to strike.",
+    "PLAYER: Ready your blade",
+    "NARRATOR: You tighten your grip on the Aurelian War Sword, its weight familiar and steady in your hand. The shadowed figure\u2019s ragged cloak stirs in the chill dawn as he steps forward, the jagged blade flashing like a shard of night. His scarred face is a mask of fury and menace, eyes burning with a hard resolve. The tapping of his metal weapon against stone quickens, a promise of violence. You brace yourself, the chill mist coiling around your boots and the scent of burnt oil thickening the air. The fight is imminent; the ruins hold their breath.",
+    "COMBAT: Twisted Shadow has been defeated! Gained 50 XP.",
+    "COMBAT: The enemy has been defeated.",
+    "NARRATOR: The last echo of the Twisted Shadow's fall fades into the hollow, mist-thick air. His jagged blade clatters against fractured stone, the sharp scent of burnt oil lingering as the cold dawn presses in. Amid the scattered debris, a bloodstained scrap of cloth flutters slightly, the faintest whisper of movement stirring deeper within the ruins. Something unseen shifts beyond the shattered pillars, drawing your gaze into the shadows."
+  ],
   "story_history": [
     {
       "event": "Awakening in the ruins of Elowen",
@@ -71,17 +153,233 @@
         "elowen",
         "spire"
       ],
-      "timestamp": "2026-05-28T17:39:19.189169"
+      "timestamp": "2026-05-29T01:50:41.816222"
+    },
+    {
+      "event": "Awakening in the Overgrown Outpost at dawn",
+      "choice_made": "Opened eyes in the collapsed merchant stall",
+      "tags": [
+        "awakening",
+        "early morning",
+        "aurelian",
+        "weeping_guardian"
+      ],
+      "timestamp": "2026-05-29T01:51:00.856930"
+    },
+    {
+      "event": "The player moves toward the Shattered Plaza following Maren's words",
+      "choice_made": "Head to the spire",
+      "tags": [
+        "exploration",
+        "weeping_guardian",
+        "shattered_plaza"
+      ],
+      "timestamp": "2026-05-29T01:51:52.650019"
+    },
+    {
+      "event": "Travelled from The Overgrown Outpost to Shattered Plaza",
+      "choice_made": "Alright, I will head to the spire",
+      "tags": [
+        "travel",
+        "the_overgrown_outpost",
+        "shattered_plaza"
+      ],
+      "timestamp": "2026-05-29T01:51:52.650019"
+    },
+    {
+      "event": "The player initiates combat with the Weeping Guardian",
+      "choice_made": "Attack it",
+      "tags": [
+        "combat",
+        "weeping_guardian",
+        "aurelian",
+        "construct"
+      ],
+      "timestamp": "2026-05-29T01:53:29.187883"
+    },
+    {
+      "event": "Combat begins with the Weeping Guardian in the Shattered Plaza",
+      "choice_made": "Engage in combat",
+      "tags": [
+        "combat",
+        "weeping_guardian",
+        "construct",
+        "aurelian"
+      ],
+      "timestamp": "2026-05-29T01:53:38.231655"
+    },
+    {
+      "event": "The Weeping Guardian is defeated, and the Solar Crest is recovered; a new threat emerges within the ruins",
+      "choice_made": "Confirmed enemy defeat and took the Solar Crest",
+      "tags": [
+        "combat",
+        "weeping_guardian",
+        "loot",
+        "quest_update",
+        "new_threat"
+      ],
+      "timestamp": "2026-05-29T01:54:01.889691"
+    },
+    {
+      "event": "Quest 'The Weeping Guardian' status: active \u2192 completed",
+      "choice_made": "The enemy has been defeated.",
+      "tags": [
+        "quest",
+        "completed",
+        "weeping_guardian"
+      ],
+      "timestamp": "2026-05-29T01:54:01.889691"
+    },
+    {
+      "event": "Encounter with frightened scavenger Talia in the Shattered Plaza",
+      "choice_made": "Followed the shadows deeper into the ruins",
+      "tags": [
+        "npc_interaction",
+        "shadows",
+        "shattered_plaza",
+        "fear"
+      ],
+      "timestamp": "2026-05-29T01:54:19.354627"
+    },
+    {
+      "event": "Talia warns of a twisted man lurking in the ruins and urges the player to find him",
+      "choice_made": "Assured Talia you will handle the threat",
+      "tags": [
+        "npc_interaction",
+        "shattered_plaza",
+        "threat_foreshadow"
+      ],
+      "timestamp": "2026-05-29T01:54:37.753895"
+    },
+    {
+      "event": "Player begins tracking the shadowy man stalking the ruins",
+      "choice_made": "Look for the man amid the ruins",
+      "tags": [
+        "exploration",
+        "shattered_plaza",
+        "shadowy_man"
+      ],
+      "timestamp": "2026-05-29T01:54:55.241497"
+    },
+    {
+      "event": "The player encounters the twisted man stalking the ruins",
+      "choice_made": "Follow the shadowy man",
+      "tags": [
+        "human",
+        "combat",
+        "shattered_plaza",
+        "shadowy_man"
+      ],
+      "timestamp": "2026-05-29T01:56:33.933156"
+    },
+    {
+      "event": "The player prepares to face the Twisted Shadow stalking the ruins",
+      "choice_made": "Ready your blade",
+      "tags": [
+        "combat",
+        "human",
+        "shattered_plaza",
+        "shadowy_man"
+      ],
+      "timestamp": "2026-05-29T01:57:02.009500"
+    },
+    {
+      "event": "Twisted Shadow defeated in the Shattered Plaza",
+      "choice_made": "Defeated the Twisted Shadow",
+      "tags": [
+        "combat",
+        "human",
+        "shattered_plaza",
+        "twisted_shadow"
+      ],
+      "timestamp": "2026-05-29T01:57:24.679667"
     }
   ],
-  "session_summary": "",
-  "summary_anchor_turn": 0,
-  "turn_count": 0,
+  "session_summary": "After hearing Maren\u2019s fearful tale of the Weeping Guardian\u2014a sorrowful, slow-moving machine haunting the shattered spire\u2014the player ventures to the plaza and confronts the Guardian, a massive figure of twisted metal and broken glass with a dim blue light pulsing beneath its plates. Despite its mournful cries and apparent burden, the player attacks and defeats the Guardian, uncovering a glowing Solar Crest etched with ancient runes among its remains. Deeper in the ruins, the player encounters Talia, a frightened woman clutching a sack, who warns of a shadowy, twisted man stalking the ruins and causing others to fall victim to dark whispers now that the Guardian is gone. Talia urges the player to find this man before more souls are lost, as ominous footsteps and shifting shadows close in around them. The tension remains high with the unknown threat lurking just beyond dawn\u2019s light.",
+  "summary_anchor_turn": 8,
+  "turn_count": 12,
   "metadata": {},
   "in_combat": false,
   "active_enemies": [],
-  "combat_log": [],
-  "encounter_registry": {},
+  "combat_log": [
+    "Combat started. You act first.",
+    "Twisted Shadow misses player (roll 10 vs AC 14)",
+    "Player misses Twisted Shadow (roll 10 vs AC 12)",
+    "Twisted Shadow misses player (roll 4 vs AC 14)",
+    "Player hits Twisted Shadow for 12 dmg (roll 25 vs AC 12)",
+    "Player hits Twisted Shadow for 7 dmg (roll 13 vs AC 12)",
+    "Twisted Shadow misses player (roll 8 vs AC 14)",
+    "Twisted Shadow hits player for 1 dmg (roll 19 vs AC 14)",
+    "Player misses Twisted Shadow (natural 1 - fumble) (roll 7 vs AC 12)",
+    "Player hits Twisted Shadow for 8 dmg (roll 22 vs AC 12)",
+    "Twisted Shadow hits player for 4 dmg (roll 20 vs AC 14)",
+    "Player misses Twisted Shadow (roll 9 vs AC 12)",
+    "Twisted Shadow misses player (roll 6 vs AC 14)",
+    "Player hits Twisted Shadow for 9 dmg (roll 20 vs AC 12)",
+    "Level up! Now level 2. Max HP +6. Strength +1. Arms grow harder.",
+    "Twisted Shadow defeated! +50 XP"
+  ],
+  "encounter_registry": {
+    "weeping_guardian": {
+      "id": "weeping_guardian",
+      "name": "Weeping Guardian",
+      "description": "This towering construct, its metal weeping with rust and ghost light, drifts silently across the Shattered Plaza. Its mournful hum chills the air, as if seeking something lost.",
+      "enemy": {
+        "name": "Weeping Guardian",
+        "hp": 28,
+        "max_hp": 28,
+        "ac": 12,
+        "attack_bonus": 2,
+        "damage_dice": "1d8",
+        "damage_bonus": 2,
+        "level": 1
+      },
+      "xp_reward": 53,
+      "gold_reward": 30,
+      "item_rewards": [
+        "Solar Crest"
+      ],
+      "narrative_flavor": "The Guardian\u2019s movements are slow but deliberate. Its sorrowful cries seem almost human, an echo of a forgotten past.",
+      "defeat_condition": "soothe",
+      "quest_id": "weeping_guardian",
+      "tags": [
+        "construct",
+        "aurelian"
+      ],
+      "is_boss": true,
+      "spawned": true,
+      "looted": true,
+      "defined_at": "The Overgrown Outpost"
+    },
+    "twisted_shadow": {
+      "id": "twisted_shadow",
+      "name": "Twisted Shadow",
+      "description": "A scarred man with a jagged blade and a haunted, twisted presence stalks the ruins. His movements are fluid but edged with menace.",
+      "enemy": {
+        "name": "Twisted Shadow",
+        "hp": 28,
+        "max_hp": 28,
+        "ac": 12,
+        "attack_bonus": 2,
+        "damage_dice": "1d8",
+        "damage_bonus": 1,
+        "level": 1
+      },
+      "xp_reward": 0,
+      "gold_reward": 15,
+      "item_rewards": [],
+      "narrative_flavor": "The Shadow strikes with sudden, cruel precision, his blade a jagged flash in the dim light. He moves unpredictably, a whisper of death.",
+      "defeat_condition": "defeat",
+      "quest_id": "whispers_in_the_ruins",
+      "tags": [
+        "human"
+      ],
+      "is_boss": true,
+      "spawned": true,
+      "looted": true,
+      "defined_at": "Shattered Plaza"
+    }
+  },
   "item_registry": {
     "rusted_shortsword": {
       "id": "rusted_shortsword",
@@ -169,6 +467,54 @@
       "ac_bonus": 4,
       "heal_amount": 0,
       "tags": []
+    },
+    "solar_crest": {
+      "id": "solar_crest",
+      "name": "Solar Crest",
+      "item_type": "lore",
+      "description": "A disc of pale gold Aurelian metal engraved with a sunburst \u2014 it hums faintly with residual resonance.",
+      "value_gold": 0,
+      "damage_dice": null,
+      "hit_bonus": 0,
+      "damage_type": "slashing",
+      "ac_bonus": 0,
+      "heal_amount": 0,
+      "tags": [
+        "lore",
+        "aurelian",
+        "unique"
+      ]
+    },
+    "mana_shard": {
+      "id": "mana_shard",
+      "name": "Mana Shard",
+      "item_type": "lore",
+      "description": "A fragment of crystalline energy once bound to Aurelian machinery, faintly glowing with ancient power.",
+      "value_gold": 0,
+      "damage_dice": null,
+      "hit_bonus": 0,
+      "damage_type": "slashing",
+      "ac_bonus": 0,
+      "heal_amount": 0,
+      "tags": [
+        "lore",
+        "aurelian"
+      ]
+    },
+    "aurelian_war_sword": {
+      "id": "aurelian_war_sword",
+      "name": "Aurelian War Sword",
+      "item_type": "weapon",
+      "description": "A finely balanced sword forged in the image of ancient Aurelian blades, humming faintly with forgotten power.",
+      "value_gold": 100,
+      "damage_dice": "1d10",
+      "hit_bonus": 2,
+      "damage_type": "slashing",
+      "ac_bonus": 0,
+      "heal_amount": 0,
+      "tags": [
+        "aurelian"
+      ]
     }
   }
 }

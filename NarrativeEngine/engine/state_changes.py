@@ -413,6 +413,7 @@ def _define_encounter(state: GameState, change: Dict[str, Any]) -> str:
         quest_id=change.get("quest_id") if isinstance(change.get("quest_id"), str) else None,
         tags=[t for t in (change.get("tags") or []) if isinstance(t, str)],
         is_boss=bool(change.get("is_boss", False)),
+        defined_at=state.current_location,  # capture where this encounter was introduced
     )
     state.encounter_registry[enc_id] = template
     boss_tag = " [BOSS]" if template.is_boss else ""
@@ -427,6 +428,17 @@ def _spawn_encounter(state: GameState, change: Dict[str, Any]) -> str:
     template = state.encounter_registry.get(enc_id)
     if template is None:
         raise ValueError(f"No encounter defined with id '{enc_id}'. Use define_encounter first.")
+
+    # Hard block: do not allow re-spawning a defeated boss whose quest is complete.
+    # The LLM is not permitted to recycle a finished encounter id for a new entity —
+    # it must use start_combat (anonymous threat) or define_encounter (new named entity).
+    if template.spawned and template.quest_id:
+        quest = state.quests.get(template.quest_id)
+        if quest and quest.status == "completed":
+            raise ValueError(
+                f"Encounter '{enc_id}' is already defeated and its quest is complete. "
+                "Use start_combat for unnamed threats or define_encounter for a new named entity."
+            )
 
     src = template.enemy
     enemy = Enemy(
@@ -476,6 +488,23 @@ def _loot_encounter(state: GameState, change: Dict[str, Any]) -> str:
             "For inline enemies spawned via start_combat, use add_item and add_gold directly."
         )
 
+    # Guard: refuse to distribute a boss's loot twice.  The "enemy defeated"
+    # combat shortcut can re-emit loot_encounter for an encounter that was
+    # already looted and whose quest is already wrapped up (as happened when the
+    # Weeping Guardian was re-looted and its quest re-completed a second time).
+    # Block on either an explicit looted flag or an already-completed quest.
+    if template.looted:
+        raise ValueError(
+            f"Encounter '{enc_id}' has already been looted — its rewards were distributed once."
+        )
+    if template.quest_id:
+        q = state.quests.get(template.quest_id)
+        if q is not None and q.status == "completed":
+            raise ValueError(
+                f"Encounter '{enc_id}' belongs to quest '{template.quest_id}', which is already "
+                "completed — its loot was distributed when the quest resolved."
+            )
+
     # XP is auto-awarded by CombatManager.resolve_full_round when the enemy dies.
     # loot_encounter handles gold and items only.
     parts: List[str] = []
@@ -493,6 +522,7 @@ def _loot_encounter(state: GameState, change: Dict[str, Any]) -> str:
         else:
             state.player.add_item(item_name)
             parts.append(f"received: {item_name}")
+    template.looted = True
     return "loot: " + " | ".join(parts) if parts else "no loot"
 
 
@@ -592,6 +622,7 @@ def _move_to(state: GameState, change: Dict[str, Any]) -> str:
     state.location_entered_turn = state.turn_count   # reset scene clock
     state.player_approaching = False                 # travel cancels a declared approach
     state.npc_exchanges_this_location = 0            # fresh dialogue budget at new location
+    state.npc_exchange_counts = {}                   # reset per-NPC counts at new location
     return f"moved to {name}"
 
 
@@ -720,8 +751,6 @@ def _add_npc(state: GameState, change: Dict[str, Any]) -> str:
     location = change.get("location")
     if not isinstance(location, str) or not location.strip():
         location = state.current_location
-    disposition = _coerce_int(change.get("disposition", 50), field="disposition")
-    disposition = max(0, min(100, disposition))
     key = _npc_key(name)
     if key in state.npcs:
         state.npcs[key].is_known = True
@@ -729,24 +758,9 @@ def _add_npc(state: GameState, change: Dict[str, Any]) -> str:
     state.npcs[key] = NPC(
         name=name.strip(),
         location=location.strip(),
-        disposition=disposition,
         is_known=True,
     )
     return f"NPC met: {name.strip()}"
-
-
-def _update_npc_disposition(state: GameState, change: Dict[str, Any]) -> str:
-    name = change.get("name")
-    if not isinstance(name, str):
-        raise ValueError("'name' must be a string")
-    delta = _coerce_int(change.get("delta"), field="delta")
-    key = _npc_key(name)
-    if key not in state.npcs:
-        raise ValueError(f"unknown NPC '{name}'")
-    npc = state.npcs[key]
-    npc.disposition = max(0, min(100, npc.disposition + delta))
-    sign = "+" if delta >= 0 else ""
-    return f"{npc.name}: disposition {sign}{delta} → {npc.disposition}"
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -814,7 +828,6 @@ _HANDLERS = {
     "fail_quest": _fail_quest,
     # npcs
     "add_npc": _add_npc,
-    "update_npc_disposition": _update_npc_disposition,
     # activity / approach
     "set_player_approaching": _set_player_approaching,
 }
@@ -859,6 +872,12 @@ ENCOUNTER REGISTRY (preferred for named enemies — see ENCOUNTER & ITEM RULES)
   Plaza — it only spawns there. If pending_encounter_ids is non-empty but the player is
   somewhere else (forest, road, outpost), do NOT use spawn_encounter for those encounters.
   Use start_combat with inline stats for any new threat at the current location instead.
+  MOVE FIRST: Before emitting spawn_encounter, check current_state.player.current_location.
+  If the player is not already at the encounter's combat location, emit move_to first.
+  Combat does not teleport the player — they walk into it.
+  DEFEATED BLOCK: Once an encounter's quest is complete, that encounter id is permanently
+  retired. The engine will reject any attempt to re-spawn it. Use start_combat or
+  define_encounter with a new id for all subsequent threats.
 - {"op":"loot_encounter","id":"<slug>"}   ← emit this in AFTERMATH MODE for gold/items only; do NOT also emit award_xp — XP is auto-awarded by the combat engine when the enemy dies
 
 ITEM REGISTRY (for weapons, armor, and quest items with mechanical properties)
@@ -885,18 +904,24 @@ QUESTS
 - {"op":"fail_quest","quest_id":"<id>"}
 
 NPCS
-- {"op":"add_npc","name":"<name>","location":"<location>","disposition":<0-100>}
-- {"op":"update_npc_disposition","name":"<NPC name>","delta":<int>}
+- {"op":"add_npc","name":"<name>","location":"<location>"}
 
 ACTIVITY / APPROACH
 - {"op":"set_player_approaching"}
   Emit this when the player's input signals explicit movement toward or intent to engage a
   known threat: "I approach", "I walk toward", "I confront it", "Let's fight", "I go in",
   "I charge", "I attack".
+  ALSO emit when a pending encounter entity is physically on-stage (visible in the current
+  scene) and the player's action is directed at it — asking it a question ("What are you?"),
+  calling out to it, singing or gesturing toward it, attempting to touch or examine it at
+  close range. Proximity plus directed action equals approach.
   For INTELLIGENT encounter entities (is_boss:true or tagged construct/sapient/ancient):
-    Do NOT emit on the first or second exchange — those entities get up to 2 brief verbal
-    responses before combat. Emit set_player_approaching (then spawn_encounter) after the
-    second exchange OR the moment the player signals physical aggression or approach.
+    In CHRONICLE/DIALOGUE mode (before this op is emitted), allow up to 2 brief verbal
+    exchanges or directed interactions. Emit set_player_approaching on the 3rd such
+    exchange, or immediately when the player signals physical aggression or direct approach.
+    Once set_player_approaching is emitted, narrative_mode becomes "encounter" next turn.
+    In ENCOUNTER mode: the arrival beat fires at phase_turn 0 ONLY. At phase_turn >= 1
+    you MUST emit spawn_encounter — that rule overrides everything else in this entry.
   For MINOR enemies (goblins, wolves, bandits — is_boss:false, no special tags):
     Emit immediately on any interaction. No dialogue; one physical reaction, then spawn.
   Do NOT emit for abstract curiosity about the world or distant observation — only for
